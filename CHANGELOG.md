@@ -1,4 +1,4 @@
-# CarsonJM/nf-phist: Changelog
+# CarsonJM/nf-proteinsimilarity: Changelog
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
@@ -31,7 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### `Added`
 
-- Initial release of [nf-phist](https://github.com/CarsonJM/nf-phist)
+- Initial release of [nf-proteinsimilarity](https://github.com/CarsonJM/nf-proteinsimilarity)
 
 ### `Changed`
 

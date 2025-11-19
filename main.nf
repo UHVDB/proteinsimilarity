@@ -2,16 +2,18 @@
 
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    CarsonJM/nf-phist
+    CarsonJM/nf-protsim
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    Github : https://github.com/CarsonJM/nf-phist
+    Github : https://github.com/CarsonJM/nf-protsim
 ----------------------------------------------------------------------------------------
     Overview:
-        1. Split input files into chunks of X genomes (Nextflow)
-        2. Download genome chunks (process - aria2c)
-        3. Run downloaded chunks through PHIST (process - phist)
-        4. Delete downloaded chunks that have been run through phist (process - rm)
-        5. Combine PHIST outputs from each chunk into one file (process)
+        1. Download latest ICTV VMR (Nextflow)
+        2. Download ICTV genomes (process - VMR_to_fasta.py)
+        3. Create DIAMOND database of ICTV genomes (process - DIAMOND)
+        4. Split query viruses into chunks (process - seqkit)
+        5. Align query virus genomes to ICTV database (process - DIAMOND)
+        6. Perform self alignment of query genomes (process - DIAMOND)
+        7. Calculate self score and normalized protein similarity (process - python)
 */
 
 
@@ -20,143 +22,59 @@
     DEFINE FUNCTIONS / MODULES / SUBWORKFLOWS / WORKFLOWS
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
-process CREATE_VIRUS_DB {
-    label "process_super_high"
-    storeDir "tmp/create_virus_db/"
-
-    conda "envs/phist.yml"
-    container "${ workflow.containerEngine == 'singularity' && !task.ext.singularity_pull_docker_container ?
-        'https://community-cr-prod.seqera.io/docker/registry/v2/blobs/sha256/b7/b72245719494da16ebe64f0f73e8f29f9880bb89dce1065a5d30c72b82f7cf68/data' :
-        'community.wave.seqera.io/library/kmer-db_python:2fcd54c55e4e0870' }"
-
-    input:
-    path(virus_fasta)
-
-    output:
-    path("virus.kdb")   , emit: virus_db
-
-    script:
-    """
-    # build kmer-db from virus fasta
-    echo "${virus_fasta}" > virus.list
-
-    kmer-db build \\
-        -k 25 \\
-        -t ${task.cpus} \\
-        -multisample-fasta \\
-        virus.list \\
-        virus.kdb
-    """
-}
-
-process ARIA2C {
-    tag "${meta.id}"
-    label "process_medium"
-    storeDir "tmp/aria2c/${meta.id}"
-    maxForks 50
-
-    conda "envs/aria2c.yml"
-    container "${ workflow.containerEngine == 'singularity' && !task.ext.singularity_pull_docker_container ?
-        'https://depot.galaxyproject.org/singularity/aria2:1.36.0' :
-        'biocontainers/aria2:1.36.0' }"
-
-    input:
-    tuple val(meta), val(urls)
-
-    output:
-    tuple val(meta), path("host_fastas/")       , emit: host_fastas
-    tuple val(meta), path("download_complete")  , emit: download_complete
-
-    script:
-    def download_list   = urls.collect { url -> url.toString() }.join(',')
-    """
-    # create an input file for aria2c
-    IFS=',' read -r -a download_array <<< "${download_list}"
-    printf '%s\\n' "\${download_array[@]}" > aria2_file.tsv
-
-    # download fasta files with aria2c
-    aria2c \\
-        --input=aria2_file.tsv \\
-        --dir=host_fastas \\
-        --max-concurrent-downloads=${task.cpus}
-
-    touch download_complete
-    """
-}
-
-process PHIST {
-    tag "${meta.id}"
-    label "process_high"
-    storeDir "tmp/phist/${meta.id}"
-    containerOptions "${ workflow.containerEngine == 'singularity' ?
-        '-B ' + workflow.launchDir :
-        '' }"
-
-    conda "envs/phist.yml"
-    container "${ workflow.containerEngine == 'singularity' && !task.ext.singularity_pull_docker_container ?
-        'https://community-cr-prod.seqera.io/docker/registry/v2/blobs/sha256/b7/b72245719494da16ebe64f0f73e8f29f9880bb89dce1065a5d30c72b82f7cf68/data' :
-        'community.wave.seqera.io/library/kmer-db_python:2fcd54c55e4e0870' }"
-
-    input:
-    tuple val(meta), val(host_fastas)
-    path(virus_db)
-
-    output:
-    tuple val(meta), path("${meta.id}.phist_table.csv") , emit: phist_tables
-
-    script:
-    """
-    # run phist on virus fasta and host fasta chunk
-    phist.py \\
-        ${virus_db} \\
-        ${host_fastas}/ \\
-        ${meta.id}.phist_table.csv \\
-        ${meta.id}.phist_preds.csv \\
-        -t ${task.cpus}
-    """
-}
-
-process RM_GENOMES {
-    tag "${meta.id}"
+process PROCESS_ACCESSIONS {
     label "process_single"
-    storeDir "tmp/rm_genomes/${meta.id}"
+    // storeDir "tmp/vmr_to_fasta/"
+
+    conda "envs/vmr_to_fasta.yml"
+    container "${ workflow.containerEngine == 'singularity' && !task.ext.singularity_pull_docker_container ?
+        'https://community-cr-prod.seqera.io/docker/registry/v2/blobs/sha256/c2/c22b4cc5cf94719862d060cabd555b816d60820fbacc0b1521d1d9ac75b0d01e/data' :
+        'community.wave.seqera.io/library/numpy_pandas:cf3ee2b3d6008f1b' }"
 
     input:
-    tuple val(meta) , val(host_fastas)
-    tuple val(meta2), val(phist_tables)
+    path(vmr)
 
     output:
-    path("rm_complete")
+    path("processed_accessions_b.tsv")  , emit: processed_accessions
 
     script:
     """
-    # delete downloaded fastas that have been run through phist
-    rm -rf ${host_fastas}/*
-
-    touch rm_complete
+    # process VMR accessions
+    VMR_to_fasta.py \\
+        -mode VMR \\
+        -ea B \\
+        -VMR_file_name ${vmr} \\
+        -v
     """
 }
 
-process COMBINE_PHIST {
+process VMR_TO_FASTA {
     label "process_single"
-    storeDir "."
+    // storeDir "tmp/vmr_to_fasta/"
+
+    conda "envs/vmr_to_fasta.yml"
+    container "${ workflow.containerEngine == 'singularity' && !task.ext.singularity_pull_docker_container ?
+        'https://community-cr-prod.seqera.io/docker/registry/v2/blobs/sha256/c2/c22b4cc5cf94719862d060cabd555b816d60820fbacc0b1521d1d9ac75b0d01e/data' :
+        'community.wave.seqera.io/library/numpy_pandas:cf3ee2b3d6008f1b' }"
 
     input:
-    path(phist_tables)
+    path(vmr)
+    path(processed_acc)
 
-    output:
-    path("${params.output}")    , emit: final_output
+    // output:
+    // tuple val(meta), path("host_fastas/")       , emit: host_fastas
+    // tuple val(meta), path("download_complete")  , emit: download_complete
 
     script:
     """
-    # iterate over phist tables
-    for table in ${phist_tables[0]}; do
-       head -n 2 \${table} > ${params.output}
-    done
-
-    for table in ${phist_tables}; do
-        tail -n +3 \${table} >> ${params.output}
-    done
+    # download fasta file using current vmr
+    VMR_to_fasta.py \\
+        -email ${params.email} \\
+        -mode fasta \\
+        -ea b \\
+        -fasta_dir ./ictv_fastas \\
+        -VMR_file_name ${vmr} \\
+        -v
     """
 }
 
@@ -169,45 +87,20 @@ workflow {
 
         // 1. Split input files into chunks of X genomes (Nextflow)
         ch_virus_fasta = channel.fromPath(params.virus_fasta).collect()
-        ch_host_fastas = channel.fromPath(params.host_file)
-            .splitCsv(header: false, strip: true)
-            .flatten()
-            .collate(params.chunk_size)
-            .toList()
-            .flatMap{ file -> file.withIndex() }
-            .map { file, index ->
-                [ [ id: 'chunk_' + index ], file ]
-            }
+        ch_ictv_vmr = channel.fromPath(params.vmr_url)
 
-        // 1.1 Create virus kmer-db
-        CREATE_VIRUS_DB(
-            ch_virus_fasta.first()
+        // 1. Process VMR accessions (process - VMR_to_fasta.py)
+        PROCESS_ACCESSIONS(
+            ch_ictv_vmr
         )
 
-
-        // 2. Download genome chunks (process - aria2c)
-        ARIA2C(
-            ch_host_fastas
-        )
-
-        // 3. Run downloaded chunks through PHIST (process - phist)
-        PHIST(
-            ARIA2C.out.host_fastas,
-            CREATE_VIRUS_DB.out.virus_db
-        )
-
-        // 4. Delete downloaded chunks that have been run through phist (process - rm)
-        RM_GENOMES(
-            ARIA2C.out.host_fastas,
-            PHIST.out.phist_tables
-        )
-
-        // 5. Combine PHIST outputs from each chunk into one file (process)
-        COMBINE_PHIST(
-            PHIST.out.phist_tables.map { _meta, tables -> [ tables ] }.collect()
+        // 2. Download fasta (process - VMR_to_fasta.py)
+        VMR_TO_FASTA(
+            ch_ictv_vmr,
+            PROCESS_ACCESSIONS.out.processed_accessions
         )
     } else {
-        println "Output file [${params.output}] already exists! Skipping nf-phist."
+        println "Output file [${params.output}] already exists! Skipping nf-proteinsimilarity."
     }
 
     // Delete intermediate and Nextflow-specific files
@@ -229,4 +122,3 @@ workflow {
         }
     }
 }
-
