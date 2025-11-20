@@ -1,8 +1,10 @@
 #!/usr/bin/env python
 
 import argparse
-import csv
+import polars as pl
 import gzip
+
+pl.Config.set_streaming_chunk_size(10_000)
 
 def parse_args(args=None):
     description = "Calculate AAI self-alignment score for a genome."
@@ -12,74 +14,44 @@ def parse_args(args=None):
     parser.add_argument(
         "-i",
         "--input",
-        help="Path to TSV created by DIAMOND (should include self-alignments).",
+        help="Path to PARQUET created by DIAMOND (should include self-alignments).",
     )
     parser.add_argument(
         "-o",
         "--output",
-        help="Output TSV containing AAI self-alignment score.",
+        help="Output PARQUET containing AAI self-alignment score.",
     )
     parser.add_argument('--version', action='version', version='1.0.0')
     return parser.parse_args(args)
 
 
-def calculate_aai(diamond_file):
-    data = {}
+def calculate_self_score(input, output):
+    
+    # write streaming code
+    self_score = (
+        pl.scan_parquet(input)
+            .select(['column00', 'column01', 'column11'])
+            .rename({'column00':'query', 'column01':'reference', 'column11':'bitscore'})
+            .filter(pl.col('query') == pl.col('reference'))
+            .with_columns([
+                pl.col('query').str.replace(r'_\d+$', '').cast(pl.Categorical).alias('genome')
+            ])
+            .group_by(pl.col('genome'))
+            .agg([
+                pl.len().alias('genes'),
+                pl.col('bitscore').sum().alias('selfscore')
+            ])
+    )
 
-    # initialize dict
-    # only use gzip if needed
-    if diamond_file.endswith('.gz'):
-        diamond_read = gzip.open(diamond_file, 'rt')
-    else:
-        diamond_read = open(diamond_file, 'r')
+    # write out parquet
+    self_score.sink_parquet(output)
 
-    line_num = 0
-
-    for r in csv.reader(diamond_read, delimiter="\t"):
-        genome = r[0].rsplit("_", 1)[0]
-        data[genome] = {"genes": 0, "selfscore": 0}
-        line_num += 1
-        if line_num % 1000000 == 0:
-            print(f"Processed {line_num} lines...", flush=True)
-
-    # reset file handle
-    diamond_read.close()
-
-
-    # only use gzip if needed
-    if diamond_file.endswith('.gz'):
-        diamond_read = gzip.open(diamond_file, 'rt')
-    else:
-        diamond_read = open(diamond_file, 'r')
-
-    line_num = 0
-
-    for r in csv.reader(diamond_read, delimiter="\t"):
-        genome = r[0].rsplit("_", 1)[0]
-        line_num += 1
-        # print(r)
-        if r[0] == r[1]:
-            data[genome]["selfscore"] += float(r[-1])
-            data[genome]["genes"] += 1
-
-        if line_num % 1000000 == 0:
-            print(f"Processed {line_num} lines...", flush=True)
-
-    return data
 
 def main(args=None):
     args = parse_args(args)
 
-    # Modify the file
-    data = calculate_aai(args.input)
-
-    with open(args.output, "w") as out:
-        header = ["genome_id", "genes", "selfscore"]
-        out.write("\t".join(header) + "\n")
-        for id in data:
-            # print(data)
-            rec = [id, data[id]["genes"], data[id]["selfscore"]]
-            out.write("\t".join([str(_) for _ in rec]) + "\n")
+    # calculate self score
+    calculate_self_score(args.input, args.output)
 
 if __name__ == "__main__":
     main()

@@ -2,18 +2,21 @@
 
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    CarsonJM/nf-protsim
+    UHVDB/proteinsimilarity
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    Github : https://github.com/CarsonJM/nf-protsim
+    Github : https://github.com/UHVDB/proteinsimilarity
 ----------------------------------------------------------------------------------------
     Overview:
         1. Download latest ICTV VMR (Nextflow)
         2. Download ICTV genomes (process - VMR_to_fasta.py)
-        3. Create DIAMOND database of ICTV genomes (process - DIAMOND)
+        3. Create DIAMOND database of ICTV genomes (process - pyrodigal-gv + DIAMOND)
         4. Split query viruses into chunks (process - seqkit)
-        5. Align query virus genomes to ICTV database (process - DIAMOND)
-        6. Perform self alignment of query genomes (process - DIAMOND)
-        7. Calculate self score and normalized protein similarity (process - python)
+        5. Align query virus genomes to ICTV database (process - pyrodigal-gv + DIAMOND)
+        6. Perform self alignment of query genomes (process - pyrodigal-gv +  DIAMOND)
+        7. Calculate self score (process - self_score.py)
+        8. Calculate normalized score (process - norm_score.py)
+        9. Combine normalized scores across chunks (process - cat)
+        10. Clean up intermediate files (OPTIONAL)
 */
 
 
@@ -26,14 +29,14 @@ process VMRTOFASTA {
     label "process_single"
 
     input:
-    path(vmr)
+    tuple val(meta), path(xlsx)
 
     output:
-    path("${vmr.getBaseName()}.fna")            , emit: ictv_fasta
-    path("processed_accessions_b.fa_names.tsv") , emit: processed_acc
-    path("bad_accessions_b.tsv")                , emit: bad_acc
-    path(".command.log")                        , emit: log
-    path(".command.sh")                         , emit: log
+    tuple val(meta), path("${meta.id}.fna.gz")                      , emit: fna
+    tuple val(meta), path("processed_accessions_b.fa_names.tsv")    , emit: processed_tsv
+    tuple val(meta), path("bad_accessions_b.tsv")                   , emit: bad_tsv
+    tuple val(meta), path(".command.log")                           , emit: log
+    tuple val(meta), path(".command.sh")                            , emit: script
 
     script:
     """
@@ -41,47 +44,20 @@ process VMRTOFASTA {
     VMR_to_fasta.py \\
         -mode VMR \\
         -ea B \\
-        -VMR_file_name ${vmr} \\
+        -VMR_file_name ${xlsx} \\
         -v
 
-    # download fasta file using current vmr
+    # download FNA file using current vmr
     VMR_to_fasta.py \\
         -email ${params.email} \\
         -mode fasta \\
         -ea b \\
         -fasta_dir ./ictv_fastas \\
-        -VMR_file_name ${vmr} \\
+        -VMR_file_name ${xlsx} \\
         -v
 
-    cat ictv_fastas/*/*.fa > ${vmr.getBaseName()}.fna
-    """
-}
-
-process DIAMOND_MAKEDB {
-    label "process_super_high"
-
-    input:
-    path(ictv_fasta)
-
-    output:
-    path("${ictv_fasta.getBaseName()}.dmnd")                , emit: dmnd
-    path("${ictv_fasta.getBaseName()}.pyrodigalgv.faa.gz")  , emit: faa
-
-    script:
-    """
-    # predict genes from FastA
-    pyrodigal-gv \\
-        -i ${ictv_fasta} \\
-        -a ${ictv_fasta.getBaseName()}.pyrodigalgv.faa \\
-        --jobs ${task.cpus}
-
-    diamond \\
-        makedb \\
-        --threads ${task.cpus} \\
-        --in ${ictv_fasta.getBaseName()}.pyrodigalgv.faa \\
-        -d ${ictv_fasta.getBaseName()}
-
-    gzip ${ictv_fasta.getBaseName()}.pyrodigalgv.faa
+    cat ictv_fastas/*/*.fa > ${meta.id}.fna
+    gzip ${meta.id}.fna
     """
 }
 
@@ -89,10 +65,12 @@ process SEQKIT_SPLIT2 {
     label 'process_high'
 
     input:
-    path(fasta)
+    tuple val(meta), path(fasta)
 
     output:
-    path("split_fastas/*")  , emit: split_fastas
+    tuple val(meta), path("split_fastas/*") , emit: fnas
+    tuple val(meta), path(".command.log")   , emit: log
+    tuple val(meta), path(".command.sh")    , emit: script
 
     script:
     """
@@ -105,22 +83,56 @@ process SEQKIT_SPLIT2 {
     """
 }
 
+process DIAMOND_MAKEDB {
+    label "process_super_high"
+
+    input:
+    tuple val(meta), path(fna)
+
+    output:
+    tuple val(meta), path("${meta.id}.dmnd")                , emit: dmnd
+    tuple val(meta), path("${meta.id}.pyrodigalgv.faa.gz")  , emit: faa
+    tuple val(meta), path(".command.log")                   , emit: log
+    tuple val(meta), path(".command.sh")                    , emit: script
+
+    script:
+    """
+    # predict genes from FNA
+    pyrodigal-gv \\
+        -i ${fna} \\
+        -a ${meta.id}.pyrodigalgv.faa \\
+        --jobs ${task.cpus}
+
+    # create DIAMOND database
+    diamond \\
+        makedb \\
+        --threads ${task.cpus} \\
+        --in ${meta.id}.pyrodigalgv.faa \\
+        -d ${meta.id}
+
+    gzip ${meta.id}.pyrodigalgv.faa
+    """
+}
+
+
 process DIAMOND_BLASTP {
     label 'process_super_high'
 
     input:
-    tuple val(meta), path(fasta)
-    path(dmnd_db)
+    tuple val(meta) , path(fna)
+    tuple val(meta2), path(dmnd)
 
     output:
-    tuple val(meta), path("${meta.id}.diamond_blastp.tsv.gz")   , emit: tsv
+    tuple val(meta), path("${meta.id}.diamond_blastp.parquet")  , emit: parquet
     tuple val(meta), path("${meta.id}.pyrodigalgv.faa.gz")      , emit: faa
+    tuple val(meta), path(".command.log")                       , emit: log
+    tuple val(meta), path(".command.sh")                        , emit: script
 
     script:
     """
-    # predict genes from FastA
+    # predict genes from FNA
     pyrodigal-gv \\
-        -i ${fasta} \\
+        -i ${fna} \\
         -a ${meta.id}.pyrodigalgv.faa \\
         --jobs ${task.cpus}
 
@@ -129,12 +141,19 @@ process DIAMOND_BLASTP {
         blastp \\
         ${params.diamond_args} \\
         --query ${meta.id}.pyrodigalgv.faa \\
-        --db ${dmnd_db} \\
+        --db ${dmnd} \\
         --threads ${task.cpus} \\
         --outfmt 6 \\
         --out ${meta.id}.diamond_blastp.tsv
 
-    gzip ${meta.id}.diamond_blastp.tsv ${meta.id}.pyrodigalgv.faa
+    duckdb -c "
+        SET memory_limit='${task.memory}'; \\
+        SET threads=${task.cpus}; \\
+        COPY(select * from read_csv_auto('${meta.id}.diamond_blastp.tsv', delim='\t', header=false, parallel=true)) TO '${meta.id}.diamond_blastp.parquet' WITH (FORMAT 'PARQUET')
+    "
+
+    gzip ${meta.id}.pyrodigalgv.faa
+    # rm -rf ${meta.id}.diamond_blastp.tsv
     """
 }
 
@@ -145,7 +164,9 @@ process DIAMOND_SELF {
     tuple val(meta), path(faa)
 
     output:
-    tuple val(meta), path("${meta.id}.diamond_blastp.tsv.gz")   , emit: tsv
+    tuple val(meta), path("${meta.id}.diamond_blastp.parquet")  , emit: parquet
+    tuple val(meta), path(".command.log")                       , emit: log
+    tuple val(meta), path(".command.sh")                        , emit: script
 
     script:
     """
@@ -169,7 +190,13 @@ process DIAMOND_SELF {
         --outfmt 6 \\
         --out ${meta.id}.diamond_blastp.tsv
 
-    gzip ${meta.id}.diamond_blastp.tsv
+    duckdb -c "
+        SET memory_limit='${task.memory}'; \\
+        SET threads=${task.cpus}; \\
+        COPY(select * from read_csv_auto('${meta.id}.diamond_blastp.tsv', delim='\t', header=false, parallel=true)) TO '${meta.id}.diamond_blastp.parquet' WITH (FORMAT 'PARQUET')
+    "
+
+    # rm -rf ${meta.id}.diamond_blastp.tsv
     """
 }
 
@@ -177,16 +204,16 @@ process SELFSCORE {
     label 'process_single'
 
     input:
-    tuple val(meta), path(self_tsv)
+    tuple val(meta), path(parquet)
 
     output:
-    tuple val(meta), path("${meta.id}.selfscore.tsv")   , emit: tsv
+    tuple val(meta), path("${meta.id}.selfscore.parquet")   , emit: parquet
 
     script:
     """
     self_score.py \\
-        --input ${self_tsv} \\
-        --output ${meta.id}.selfscore.tsv
+        --input ${parquet} \\
+        --output ${meta.id}.selfscore.parquet
     """
 }
 
@@ -194,41 +221,41 @@ process NORMSCORE {
     label 'process_high'
 
     input:
-    tuple val(meta), path(self_tsv), path(ref_tsv)
+    tuple val(meta), path(self_parquet), path(ref_parquet)
 
     output:
-    tuple val(meta), path("${meta.id}.normscore.tsv")   , emit: tsv
+    tuple val(meta), path("${meta.id}.normscore.tsv.gz")    , emit: tsv
 
     script:
     """
     norm_score.py \\
-        --input ${ref_tsv} \\
-        --self_score ${self_tsv} \\
-        --min_score 0 \\
-        --threads ${task.cpus} \\
+        --input ${ref_parquet} \\
+        --self_score ${self_parquet} \\
+        --min_score ${params.min_score} \\
         --output ${meta.id}.normscore.tsv
+
+    gzip ${meta.id}.normscore.tsv
     """
 }
 
 process COMBINESCORES {
     label 'process_single'
+    tag "all"
     storeDir "."
 
     input:
-    path(norm_scores)
+    path(tsvs)
 
     output:
     path("${params.output}")    , emit: tsv
 
     script:
     """
-    # iterate over scores
-    for table in ${norm_scores[0]}; do
-       head -n 1 \${table} > ${params.output}
-    done
+    touch ${params.output}
 
-    for table in ${norm_scores}; do
-        tail -n +2 \${table} >> ${params.output}
+    # iterate over scores
+    for table in ${tsvs}; do
+       zcat \${table} >> ${params.output}
     done
     """
 }
@@ -239,75 +266,73 @@ workflow {
     main:
     // Check if output file already exists
     def output_file = file("${params.output}")
-    println workflow.configFiles
+    def vmr_dmnd = params.vmr_dmnd ? file(params.vmr_dmnd).exists() : false
+
     if (!output_file.exists()) {
 
-        ch_query_fasta = channel.fromPath(params.query_fasta).collect()
+        // Prepare ICTV DIAMOND database
+        if (!vmr_dmnd) {
+            ch_ictv_vmr = channel.fromPath(params.vmr_url).map { xlsx ->
+                [ [ id: "${xlsx.getBaseName()}" ], xlsx ]
+            }
 
-        // Prepare reference fasta file
-        if (file("${params.ref_fasta}").exists()) {
-            ch_ref_fna  = channel.fromPath(params.ref_fasta)
-        } else if (params.vmr_url) {
-            // 1. Download VMR file if necessary (Nextflow)
-            ch_ictv_vmr = channel.fromPath(params.vmr_url)
-
-            // 2. Download fasta (process - VMR_to_fasta.py)
             VMRTOFASTA(
                 ch_ictv_vmr
             )
-            ch_ref_fna = VMRTOFASTA.out.ictv_fasta
-        }
 
-        if (!file("${params.ref_db}").exists()) {
-            // 3. Create DIAMOND database (process - pyrodiga-gv + DIAMOND)
             DIAMOND_MAKEDB(
-                ch_ref_fna
+                VMRTOFASTA.out.fna
             )
             ch_dmnd_db = DIAMOND_MAKEDB.out.dmnd
         } else {
-            ch_dmnd_db  = channel.fromPath(params.ref_db)
+            ch_dmnd_db = channel.fromPath(params.vmr_dmnd).map { dmnd ->
+                [ [ id: "${dmnd.getBaseName()}" ], dmnd ]
+            }
         }
 
-        // 4. Split query fasta file (process - seqkit)
+        // Split input FNA file
         SEQKIT_SPLIT2(
-            ch_query_fasta
+            channel.fromPath(params.query_fna).map { fna ->
+                [ [ id: "${fna.getBaseName()}" ], fna ]
+            }
         )
 
-        ch_split_fastas = SEQKIT_SPLIT2.out.split_fastas
-            .map { file -> file }
+        ch_split_fnas = SEQKIT_SPLIT2.out.fnas
+            .map { _meta, fnas -> fnas }
             .flatten()
-            .map { file ->
-                [ [ id: file.getBaseName() ], file ]
+            .map { fna ->
+                [ [ id: fna.getBaseName() ], fna ]
             }
 
-        // 5. Run DIAMOND against ref db (process - pyrodigal-gv + DIAMOND)
+
+        // Run DIAMOND against ref db
         DIAMOND_BLASTP(
-            ch_split_fastas,
+            ch_split_fnas,
             ch_dmnd_db.collect()
         )
 
-        // 6. Run DIAMOND self alignment (process - DIAMOND)
+        // Run DIAMOND self alignment
         DIAMOND_SELF(
             DIAMOND_BLASTP.out.faa
         )
 
-        // 7. Calculate self score (process - self_score.py)
+        // Calculate self score
         SELFSCORE(
-            DIAMOND_SELF.out.tsv
+            DIAMOND_SELF.out.parquet
         )
 
-        // 8. Calculate normalized bitscore (process - norm_score.py)
+        // Calculate normalized bitscore
         NORMSCORE(
-            SELFSCORE.out.tsv.combine(DIAMOND_BLASTP.out.tsv, by:0)
+            SELFSCORE.out.parquet.combine(DIAMOND_BLASTP.out.parquet, by:0)
         )
 
-        // 9. Combine results (process - CAT)
+        // Combine results (process - CAT)
         COMBINESCORES(
             NORMSCORE.out.tsv.map { _meta, tsvs -> [ tsvs ] }.collect()
         )
 
     } else {
-        println "Output file [${params.output}] already exists! Skipping nf-proteinsimilarity."
+        println "[UHVDB/proteinsimilarity]: Output file [${params.output}] already exists!"
     }
 
     // Delete intermediate and Nextflow-specific files
