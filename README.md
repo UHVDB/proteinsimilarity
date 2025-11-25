@@ -26,12 +26,12 @@ First, install Conda/Mamba/Micromamba/Pixi
 "${SHELL}" <(curl -L micro.mamba.pm/install.sh)
 ```
 
-Then create a Nextflow environment
+Then create a Nextflow environment with singularity
 ```
-micromamba create -n nextflow -c conda-forge -c bioconda nextflow -y
+micromamba create -n nextflow -c conda-forge -c bioconda nextflow singularity -y
 ```
 
-Activate the Nextflow environemtn
+Activate the Nextflow environment
 ```
 micromamba activate nextflow
 ```
