@@ -9,7 +9,7 @@ nextflow_pipeline {
     test("-profile test_url") {
         when {
             params {
-                output = "${outputDir}/protein_predictions.csv"
+                output = "${outputDir}/protein_predictions.tsv"
             }
         }
 
