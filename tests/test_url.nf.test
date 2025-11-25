@@ -1,0 +1,23 @@
+nextflow_pipeline {
+
+    name "Test pipeline with VMR URL input"
+    script "../main.nf"
+    tag "pipeline"
+    tag "test_url"
+    profile "test_url"
+
+    test("-profile test_url") {
+        when {
+            params {
+                output = "${outputDir}/protein_predictions.csv"
+            }
+        }
+
+        then {
+            assertAll(
+                { assert workflow.success },
+                { assert snapshot(path("${params.output}")).match('output') },
+            )
+        }
+    }
+}

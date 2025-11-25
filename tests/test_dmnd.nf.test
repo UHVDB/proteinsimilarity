@@ -1,0 +1,23 @@
+nextflow_pipeline {
+
+    name "Test pipeline with VMR DIAMOND input"
+    script "../main.nf"
+    tag "pipeline"
+    tag "test_dmnd"
+    profile "test_dmnd"
+
+    test("-profile test_dmnd") {
+        when {
+            params {
+                output = "${outputDir}/protein_predictions.tsv"
+            }
+        }
+
+        then {
+            assertAll(
+                { assert workflow.success },
+                { assert snapshot(path("${params.output}")).match('output') },
+            )
+        }
+    }
+}

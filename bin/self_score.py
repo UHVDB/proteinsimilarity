@@ -41,6 +41,7 @@ def calculate_self_score(input, output):
                 pl.len().alias('genes'),
                 pl.col('bitscore').sum().alias('selfscore')
             ])
+            .sort('genome')
     )
 
     # write out parquet
