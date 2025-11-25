@@ -336,6 +336,7 @@ workflow {
         println "[UHVDB/proteinsimilarity]: Output file [${params.output}] already exists!"
     }
 
+
     // Delete intermediate and Nextflow-specific files
     def remove_tmp = params.remove_tmp
     workflow.onComplete {
