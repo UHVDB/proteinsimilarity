@@ -241,21 +241,22 @@ process NORMSCORE {
 process COMBINESCORES {
     label 'process_single'
     tag "all"
-    storeDir "."
+    storeDir file("${params.output}").getParent()
 
     input:
-    path(tsvs)
+    tuple val(meta), path(tsvs)
 
     output:
-    path("${params.output}")    , emit: tsv
+    tuple val(meta), path("${output}")   , emit: tsv
 
     script:
+    output = file("${params.output}").getName()
     """
-    touch ${params.output}
+    touch ${output}
 
     # iterate over scores
     for table in ${tsvs}; do
-       zcat \${table} >> ${params.output}
+       zcat \${table} >> ${output}
     done
     """
 }
@@ -328,7 +329,7 @@ workflow {
 
         // Combine results (process - CAT)
         COMBINESCORES(
-            NORMSCORE.out.tsv.map { _meta, tsvs -> [ tsvs ] }.collect()
+            NORMSCORE.out.tsv.map { _meta, tsvs -> [ [ id: 'combined'], tsvs ] }.groupTuple(sort: 'deep')
         )
 
     } else {
@@ -338,10 +339,11 @@ workflow {
     // Delete intermediate and Nextflow-specific files
     def remove_tmp = params.remove_tmp
     workflow.onComplete {
-        if (output_file.exists()) {
+        if ( (output_file.exists()) && (remove_tmp) ) {
             def work_dir = new File("./work/")
             def nextflow_dir = new File("./.nextflow/")
             def launch_dir = new File(".")
+            def tmp_dir = new File("./tmp/")
 
             work_dir.deleteDir()
             nextflow_dir.deleteDir()
@@ -350,11 +352,7 @@ workflow {
                     file.delete()
                 }
             }
-
-            if (remove_tmp) {
-                def tmp_dir = new File("./tmp/")
-                tmp_dir.deleteDir()
-            }
+            tmp_dir.deleteDir()
         }
     }
 }

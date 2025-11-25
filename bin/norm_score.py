@@ -30,7 +30,7 @@ def parse_args(args=None):
         "-m",
         "--min_score",
         help="Minimum normscore to output.",
-        type=int,
+        type=float,
         default=0
     )
     parser.add_argument(
@@ -73,6 +73,7 @@ def aai_main(input, self_score, output, min_score):
             ])
             .filter(pl.col('norm_score') >= min_score)
             .select(['query', 'reference', 'norm_score'])
+            .sort(['query', 'reference'])
     )
 
     norm_score.sink_csv(output, separator='\t', float_precision=2, include_header=False)
