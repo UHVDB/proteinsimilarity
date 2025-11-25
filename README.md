@@ -17,6 +17,9 @@ This wrapper performs the following steps:
 9. Combine normalized scores across chunks
 10. Clean up intermediate files (OPTIONAL: `--remove_tmp true`)
 
+Auto-generated DAG for this workflow:
+![dag](assets/img/uhvdb-proteinsimilarity-dag.png)
+
 ### Quick start
 In addition to automated downloads and cleanup (limiting disk requirements), this wrapper also makes setup very easy.
 
