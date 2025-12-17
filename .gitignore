@@ -3,6 +3,7 @@ work/
 results/
 .vscode/
 tmp/
+dbs/
 *.csv
 .nf-test*
 *.tsv
