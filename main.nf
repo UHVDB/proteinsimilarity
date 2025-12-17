@@ -6,19 +6,6 @@
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     Github : https://github.com/UHVDB/proteinsimilarity
 ----------------------------------------------------------------------------------------
-    Overview:
-        1. Download latest ICTV VMR (Nextflow)
-        2. Download ICTV genomes (process - VMR_to_fasta.py)
-        3. Create DIAMOND database of ICTV genomes (process - pyrodigal-gv + DIAMOND)
-        4. Split query viruses into chunks (process - seqkit)
-        5. Align query virus genomes to ICTV database (process - pyrodigal-gv + DIAMOND)
-        6. Perform self alignment of query genomes (process - pyrodigal-gv +  DIAMOND)
-        7. Calculate self score (process - self_score.py)
-        8. Calculate normalized score (process - norm_score.py)
-        9. Combine normalized scores across chunks (process - cat)
-        10. Clean up intermediate files (OPTIONAL)
-*/
-
 
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
