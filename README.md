@@ -41,7 +41,7 @@ micromamba activate nextflow
 
 Then just run the pipeline!
 ```
-nextflow run UHVDB/proteinsimilarity -profile test,<docker/singularity/conda/mamba>
+nextflow run UHVDB/proteinsimilarity -profile test_url,<docker/singularity/conda/mamba>
 ```
 
 ### Usage

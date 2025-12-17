@@ -6,27 +6,14 @@
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     Github : https://github.com/UHVDB/proteinsimilarity
 ----------------------------------------------------------------------------------------
-    Overview:
-        1. Download latest ICTV VMR (Nextflow)
-        2. Download ICTV genomes (process - VMR_to_fasta.py)
-        3. Create DIAMOND database of ICTV genomes (process - pyrodigal-gv + DIAMOND)
-        4. Split query viruses into chunks (process - seqkit)
-        5. Align query virus genomes to ICTV database (process - pyrodigal-gv + DIAMOND)
-        6. Perform self alignment of query genomes (process - pyrodigal-gv +  DIAMOND)
-        7. Calculate self score (process - self_score.py)
-        8. Calculate normalized score (process - norm_score.py)
-        9. Combine normalized scores across chunks (process - cat)
-        10. Clean up intermediate files (OPTIONAL)
 */
 
-
-/*
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    DEFINE FUNCTIONS / MODULES / SUBWORKFLOWS / WORKFLOWS
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-*/
+//
+// Define modules
+//
 process VMRTOFASTA {
     label "process_single"
+    storeDir "dbs/${task.process.toString().toLowerCase().replace("_", "/")}/${meta.id}"
 
     input:
     tuple val(meta), path(xlsx)
@@ -58,6 +45,8 @@ process VMRTOFASTA {
 
     cat ictv_fastas/*/*.fa > ${meta.id}.fna
     gzip ${meta.id}.fna
+
+    rm -rf fixed_vmr_b.tsv process_accessions_b.tsv ictv_fastas/
     """
 }
 
@@ -153,7 +142,7 @@ process DIAMOND_BLASTP {
     "
 
     gzip ${meta.id}.pyrodigalgv.faa
-    # rm -rf ${meta.id}.diamond_blastp.tsv
+    rm -rf ${meta.id}.diamond_blastp.tsv
     """
 }
 
@@ -196,7 +185,7 @@ process DIAMOND_SELF {
         COPY(select * from read_csv_auto('${meta.id}.diamond_blastp.tsv', delim='\t', header=false, parallel=true)) TO '${meta.id}.diamond_blastp.parquet' WITH (FORMAT 'PARQUET')
     "
 
-    # rm -rf ${meta.id}.diamond_blastp.tsv
+    rm -rf ${meta.id}.diamond_blastp.tsv ${meta.id}.dmnd
     """
 }
 
@@ -256,12 +245,14 @@ process COMBINESCORES {
 
     # iterate over scores
     for table in ${tsvs}; do
-       zcat \${table} >> ${output}
+        zcat \${table} >> ${output}
     done
     """
 }
 
-// Run entry workflow
+//
+// Run workflow
+//
 workflow {
 
     main:
@@ -269,9 +260,8 @@ workflow {
     def output_file = file("${params.output}")
     def vmr_dmnd = params.vmr_dmnd ? file(params.vmr_dmnd).exists() : false
 
+    // Prepare ICTV DIAMOND database
     if (!output_file.exists()) {
-
-        // Prepare ICTV DIAMOND database
         if (!vmr_dmnd) {
             ch_ictv_vmr = channel.fromPath(params.vmr_url).map { xlsx ->
                 [ [ id: "${xlsx.getBaseName()}" ], xlsx ]
@@ -305,7 +295,6 @@ workflow {
                 [ [ id: fna.getBaseName() ], fna ]
             }
 
-
         // Run DIAMOND against ref db
         DIAMOND_BLASTP(
             ch_split_fnas,
@@ -327,7 +316,7 @@ workflow {
             SELFSCORE.out.parquet.combine(DIAMOND_BLASTP.out.parquet, by:0)
         )
 
-        // Combine results (process - CAT)
+        // Combine results
         COMBINESCORES(
             NORMSCORE.out.tsv.map { _meta, tsvs -> [ [ id: 'combined'], tsvs ] }.groupTuple(sort: 'deep')
         )
