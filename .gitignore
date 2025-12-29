@@ -7,3 +7,6 @@ dbs/
 *.csv
 .nf-test*
 *.tsv
+.singularity-cache/
+.conda-cache/
+.apptainer-cache/

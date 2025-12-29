@@ -2,348 +2,332 @@
 
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    UHVDB/proteinsimilarity
+    IMPORT PLUGINS/FUNCTIONS/MODULES/SUBWORKFLOWS/WORKFLOWS
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    Github : https://github.com/UHVDB/proteinsimilarity
-----------------------------------------------------------------------------------------
 */
+// PLUGINS
+include { samplesheetToList } from 'plugin/nf-schema'
 
+// FUNCTIONS
+def validateInputSamplesheet (input) {
+    def metas = input[1]
 
-//
-// Define modules
-//
-process VMRTOFASTA {
-    label "process_single"
-    storeDir "dbs/${task.process.toString().toLowerCase().replace("_", "/")}/${meta.id}"
-
-    input:
-    tuple val(meta), path(xlsx)
-
-    output:
-    tuple val(meta), path("${meta.id}.fna.gz")                      , emit: fna
-    tuple val(meta), path("processed_accessions_b.fa_names.tsv")    , emit: processed_tsv
-    tuple val(meta), path("bad_accessions_b.tsv")                   , emit: bad_tsv
-    tuple val(meta), path(".command.log")                           , emit: log
-    tuple val(meta), path(".command.sh")                            , emit: script
-
-    script:
-    """
-    # process VMR accessions
-    VMR_to_fasta.py \\
-        -mode VMR \\
-        -ea B \\
-        -VMR_file_name ${xlsx} \\
-        -v
-
-    # download FNA file using current vmr
-    VMR_to_fasta.py \\
-        -email ${params.email} \\
-        -mode fasta \\
-        -ea b \\
-        -fasta_dir ./ictv_fastas \\
-        -VMR_file_name ${xlsx} \\
-        -v
-
-    cat ictv_fastas/*/*.fa > ${meta.id}.fna
-    gzip ${meta.id}.fna
-
-    rm -rf fixed_vmr_b.tsv process_accessions_b.tsv ictv_fastas/
-    """
+    // Check that multiple runs of the same sample are of the same datatype i.e. single-end / paired-end
+    def endedness_ok = metas.collect{ meta -> meta.single_end }.unique().size == 1
+    if (!endedness_ok) {
+        error("Please check input samplesheet -> Multiple runs of a sample must be of the same datatype i.e. single-end or paired-end: ${metas[0].id}")
+    }
+    // Check that multiple runs of the same sample are placed in the same group
+    def grouping_ok = metas.collect{ meta -> meta.group }.unique().size == 1
+    if (!grouping_ok) {
+        error("Please check input samplesheet -> Multiple runs of a sample must be placed into the same group: ${metas[0].id}")
+    }
+    // Check that multiple runs of the same sample are given different run ids
+    def runs_ok   = metas.collect{ meta -> meta.run }.unique().size == metas.collect{ meta -> meta.run }.size
+    if (!runs_ok) {
+        error("Please check input samplesheet -> Multiple runs of a sample must be given a different run id: ${metas[0].id}")
+    }
 }
 
-process SEQKIT_SPLIT2 {
-    label 'process_high'
+// MODULES
+include { DEACON_INDEXFETCH         } from './modules/local/deacon/indexfetch'
+include { GENOMAD_DOWNLOADDATABASE  } from './modules/local/genomad/downloaddatabase'
+include { GENOMAD_ENDTOEND          } from './modules/local/genomad/endtoend'
+include { READ_DOWNLOAD             } from './modules/local/read/download'
+include { READ_PREPROCESS           } from './modules/local/read/preprocess'
 
-    input:
-    tuple val(meta), path(fasta)
+// SUBWORKFLOWS
+// include { GENOMAD                    } from './subworkflows/local/genomad'
+include { PREPROCESS    } from './subworkflows/local/preprocess'
 
-    output:
-    tuple val(meta), path("split_fastas/*") , emit: fnas
-    tuple val(meta), path(".command.log")   , emit: log
-    tuple val(meta), path(".command.sh")    , emit: script
+// WORKFLOWS
+include { ANNOTATE                  } from './workflows/local/annotate'
+include { MINE                      } from './workflows/local/mine'
 
-    script:
-    """
-    seqkit \\
-        split2 \\
-            ${fasta} \\
-            --threads ${task.cpus} \\
-            --by-size ${params.chunk_size} \\
-            --out-dir split_fastas
-    """
-}
-
-process DIAMOND_MAKEDB {
-    label "process_super_high"
-
-    input:
-    tuple val(meta), path(fna)
-
-    output:
-    tuple val(meta), path("${meta.id}.dmnd")                , emit: dmnd
-    tuple val(meta), path("${meta.id}.pyrodigalgv.faa.gz")  , emit: faa
-    tuple val(meta), path(".command.log")                   , emit: log
-    tuple val(meta), path(".command.sh")                    , emit: script
-
-    script:
-    """
-    # predict genes from FNA
-    pyrodigal-gv \\
-        -i ${fna} \\
-        -a ${meta.id}.pyrodigalgv.faa \\
-        --jobs ${task.cpus}
-
-    # create DIAMOND database
-    diamond \\
-        makedb \\
-        --threads ${task.cpus} \\
-        --in ${meta.id}.pyrodigalgv.faa \\
-        -d ${meta.id}
-
-    gzip ${meta.id}.pyrodigalgv.faa
-    """
-}
-
-
-process DIAMOND_BLASTP {
-    label 'process_super_high'
-
-    input:
-    tuple val(meta) , path(fna)
-    tuple val(meta2), path(dmnd)
-
-    output:
-    tuple val(meta), path("${meta.id}.diamond_blastp.parquet")  , emit: parquet
-    tuple val(meta), path("${meta.id}.pyrodigalgv.faa.gz")      , emit: faa
-    tuple val(meta), path(".command.log")                       , emit: log
-    tuple val(meta), path(".command.sh")                        , emit: script
-
-    script:
-    """
-    # predict genes from FNA
-    pyrodigal-gv \\
-        -i ${fna} \\
-        -a ${meta.id}.pyrodigalgv.faa \\
-        --jobs ${task.cpus}
-
-    # align genes to DIAMOND reference db
-    diamond \\
-        blastp \\
-        ${params.diamond_args} \\
-        --query ${meta.id}.pyrodigalgv.faa \\
-        --db ${dmnd} \\
-        --threads ${task.cpus} \\
-        --outfmt 6 \\
-        --out ${meta.id}.diamond_blastp.tsv
-
-    duckdb -c "
-        SET memory_limit='${task.memory}'; \\
-        SET threads=${task.cpus}; \\
-        COPY(select * from read_csv_auto('${meta.id}.diamond_blastp.tsv', delim='\t', header=false, parallel=true)) TO '${meta.id}.diamond_blastp.parquet' WITH (FORMAT 'PARQUET')
-    "
-
-    gzip ${meta.id}.pyrodigalgv.faa
-    rm -rf ${meta.id}.diamond_blastp.tsv
-    """
-}
-
-process DIAMOND_SELF {
-    label 'process_super_high'
-
-    input:
-    tuple val(meta), path(faa)
-
-    output:
-    tuple val(meta), path("${meta.id}.diamond_blastp.parquet")  , emit: parquet
-    tuple val(meta), path(".command.log")                       , emit: log
-    tuple val(meta), path(".command.sh")                        , emit: script
-
-    script:
-    """
-    # make DIAMOND db for self alignment
-    diamond \\
-        makedb \\
-        --threads ${task.cpus} \\
-        --in ${faa} \\
-        -d ${meta.id}
-
-    # align genes to DIAMOND self db
-    diamond \\
-        blastp \\
-        --masking none \\
-        -k 1000 \\
-        -e 1e-3 \\
-        --faster \\
-        --query ${faa} \\
-        --db ${meta.id}.dmnd \\
-        --threads ${task.cpus} \\
-        --outfmt 6 \\
-        --out ${meta.id}.diamond_blastp.tsv
-
-    duckdb -c "
-        SET memory_limit='${task.memory}'; \\
-        SET threads=${task.cpus}; \\
-        COPY(select * from read_csv_auto('${meta.id}.diamond_blastp.tsv', delim='\t', header=false, parallel=true)) TO '${meta.id}.diamond_blastp.parquet' WITH (FORMAT 'PARQUET')
-    "
-
-    rm -rf ${meta.id}.diamond_blastp.tsv ${meta.id}.dmnd
-    """
-}
-
-process SELFSCORE {
-    label 'process_single'
-
-    input:
-    tuple val(meta), path(parquet)
-
-    output:
-    tuple val(meta), path("${meta.id}.selfscore.parquet")   , emit: parquet
-
-    script:
-    """
-    self_score.py \\
-        --input ${parquet} \\
-        --output ${meta.id}.selfscore.parquet
-    """
-}
-
-process NORMSCORE {
-    label 'process_high'
-
-    input:
-    tuple val(meta), path(self_parquet), path(ref_parquet)
-
-    output:
-    tuple val(meta), path("${meta.id}.normscore.tsv.gz")    , emit: tsv
-
-    script:
-    """
-    norm_score.py \\
-        --input ${ref_parquet} \\
-        --self_score ${self_parquet} \\
-        --min_score ${params.min_score} \\
-        --output ${meta.id}.normscore.tsv
-
-    gzip ${meta.id}.normscore.tsv
-    """
-}
-
-process COMBINESCORES {
-    label 'process_single'
-    tag "all"
-    storeDir file("${params.output}").getParent()
-
-    input:
-    tuple val(meta), path(tsvs)
-
-    output:
-    tuple val(meta), path("${output}")   , emit: tsv
-
-    script:
-    output = file("${params.output}").getName()
-    """
-    touch ${output}
-
-    # iterate over scores
-    for table in ${tsvs}; do
-        zcat \${table} >> ${output}
-    done
-    """
-}
-
-//
-// Run workflow
-//
+//-------------------------------------------
+// PIPELINE: UHVDB
+// inputs:
+// - params.input
+// - params.fastqs
+// - params.fnas
+// - params.virus_fnas
+// outputs:
+// - params.output_dir
+// steps:
+// - load inputs (various functions)
+// - PREPROCESS_READS (subworkflow)
+// - MINE (workflow)
+// - ANNOTATE (workflow)
+// - UPDATE (workflow)
+// - ANALYZE (workflow)
+// - COMPARE (workflow)
+//-------------------------------------------
 workflow {
 
     main:
-    // Check if output file already exists
-    def output_file = file("${params.output}")
-    def vmr_dmnd = params.vmr_dmnd ? file(params.vmr_dmnd).exists() : false
 
-    // Prepare ICTV DIAMOND database
-    if (!output_file.exists()) {
-        if (!vmr_dmnd) {
-            ch_ictv_vmr = channel.fromPath(params.vmr_url).map { xlsx ->
-                [ [ id: "${xlsx.getBaseName()}" ], xlsx ]
+    ch_input_fastqs_prefilt = channel.empty()
+    ch_input_sra_prefilt    = channel.empty()
+    ch_input_fastas         = channel.empty()
+    ch_input_virus_fastas   = channel.empty()
+    ch_virus_fna_gz         = channel.empty()
+    ch_hq_virus_fna_gz      = channel.empty()
+
+    // Load input samplesheet (--input)
+    if (params.input) {
+        ch_samplesheet = channel.fromList(samplesheetToList(params.input, "${projectDir}/assets/schema_input.json"))
+            .map { meta, fastq_1, fastq_2, _fna, _virus_fna ->
+                    def sra         = meta.acc
+                    meta.single_end = fastq_2 ? false : true
+                    def no_fastq    = !fastq_1 && !fastq_2
+                    if (meta.single_end) {
+                        return [ meta + [ from_sra:false ], [ fastq_1 ], sra ]
+                    } else if (!no_fastq) {
+                        return [ meta + [ from_sra:false ], [ fastq_1, fastq_2 ], sra ]
+                    } else {
+                        return [ meta + [ from_sra:true ], [], sra ]
+                    }
+            }
+            .multiMap { meta, fastqs, sra ->
+                fastqs: [ meta, fastqs ]
+                sra:    [ meta, sra ]
             }
 
-            VMRTOFASTA(
-                ch_ictv_vmr
-            )
-
-            DIAMOND_MAKEDB(
-                VMRTOFASTA.out.fna
-            )
-            ch_dmnd_db = DIAMOND_MAKEDB.out.dmnd
-        } else {
-            ch_dmnd_db = channel.fromPath(params.vmr_dmnd).map { dmnd ->
-                [ [ id: "${dmnd.getBaseName()}" ], dmnd ]
+        // validate samplesheet
+        ch_samplesheet.fastqs
+            .map { meta, fastq ->
+                [ meta.id, meta, fastq ]
             }
-        }
+            .groupTuple()
+            .map { samplesheet -> validateInputSamplesheet(samplesheet) }
 
-        // Split input FNA file
-        SEQKIT_SPLIT2(
-            channel.fromPath(params.query_fna).map { fna ->
-                [ [ id: "${fna.getBaseName()}" ], fna ]
-            }
+        ch_input_fastqs_prefilt = ch_input_fastqs_prefilt.mix(ch_samplesheet.fastqs)
+        ch_input_sra_prefilt    = ch_input_sra_prefilt.mix(ch_samplesheet.sra)
+
+        ch_input_fastas = ch_input_fastas.mix(
+                channel.fromList(samplesheetToList(params.input, "${projectDir}/assets/schema_input.json"))
+                .map { meta, _fastq_1, _fastq_2, fna, _virus_fna ->
+                    return [ meta, fna ]
+                }
+                .filter { _meta, fna -> fna[0] }
         )
 
-        ch_split_fnas = SEQKIT_SPLIT2.out.fnas
-            .map { _meta, fnas -> fnas }
-            .flatten()
-            .map { fna ->
-                [ [ id: fna.getBaseName() ], fna ]
-            }
-
-        // Run DIAMOND against ref db
-        DIAMOND_BLASTP(
-            ch_split_fnas,
-            ch_dmnd_db.collect()
+        ch_input_virus_fastas = ch_input_virus_fastas.mix(
+                channel.fromList(samplesheetToList(params.input, "${projectDir}/assets/schema_input.json"))
+                .map { meta, _fastq_1, _fastq_2, _fna, virus_fna ->
+                    return [ meta, virus_fna ]
+                }
+                .filter { _meta, virus_fna -> virus_fna[0] }
         )
-
-        // Run DIAMOND self alignment
-        DIAMOND_SELF(
-            DIAMOND_BLASTP.out.faa
-        )
-
-        // Calculate self score
-        SELFSCORE(
-            DIAMOND_SELF.out.parquet
-        )
-
-        // Calculate normalized bitscore
-        NORMSCORE(
-            SELFSCORE.out.parquet.combine(DIAMOND_BLASTP.out.parquet, by:0)
-        )
-
-        // Combine results
-        COMBINESCORES(
-            NORMSCORE.out.tsv.map { _meta, tsvs -> [ [ id: 'combined'], tsvs ] }.groupTuple(sort: 'deep')
-        )
-
-    } else {
-        println "[UHVDB/proteinsimilarity]: Output file [${params.output}] already exists!"
     }
 
-
-    // Delete intermediate and Nextflow-specific files
-    def remove_tmp = params.remove_tmp
-    workflow.onComplete {
-        if ( (output_file.exists()) && (remove_tmp) ) {
-            def work_dir = new File("./work/")
-            def nextflow_dir = new File("./.nextflow/")
-            def launch_dir = new File(".")
-            def tmp_dir = new File("./tmp/")
-
-            work_dir.deleteDir()
-            nextflow_dir.deleteDir()
-            launch_dir.eachFileRecurse { file ->
-                if (file.name ==~ /\.nextflow\.log.*/) {
-                    file.delete()
+    // Load input --fastqs
+    if ( params.fastqs ) {
+        ch_input_fastqs_prefilt = ch_input_fastqs_prefilt.mix(
+            channel.fromFilePairs(params.fastqs, size:-1)
+            .map { meta, fastq ->
+                def meta_new = [:]
+                meta_new.id           = meta
+                meta_new.bioproject   = meta
+                meta_new.group        = meta
+                meta_new.single_end   = fastq.size() == 1 ? true : false
+                meta_new.from_sra     = false
+                if ( meta_new.single_end ) {
+                    return [ meta_new, [ fastq[0] ] ]
+                } else {
+                    return [ meta_new, [ fastq[0], fastq[1] ] ]
                 }
             }
-            tmp_dir.deleteDir()
-        }
+        )
     }
+
+    // Filter out empty fastq channels
+    ch_input_fastqs = ch_input_fastqs_prefilt.filter { _meta, fastqs -> fastqs[0] }
+    ch_input_sras   = ch_input_sra_prefilt.filter { _meta, sra -> sra[0] }
+
+    //-------------------------------------------
+    // SUBWORKFLOW: PREPROCESS
+    // inputs:
+    // - [ [ meta ], [ read1.fastq.gz, read1.fastq.gz? ] ]
+    // - [ [ meta ], acc ]
+    // outputs:
+    // - [ [ meta ], spring ]
+    // steps:
+    // - DEACON_INDEXFETCH (module)
+    // - READ_DOWNLOAD (module)
+    // - READ_PREPROCESS (module)
+    //-------------------------------------------
+    PREPROCESS(
+        ch_input_fastqs,
+        ch_input_sras
+    )
+    ch_preprocessed_spring = PREPROCESS.out.preprocessed_spring
+
+    //-------------------------------------
+    // Load input --fnas
+    //-------------------------------------
+    if ( params.fnas ) {
+        ch_input_fastas = ch_input_fastas.mix(
+            channel.fromPath(params.fastas, size:-1)
+            .map { meta, fasta ->
+                def meta_new = [:]
+                meta_new.id           = meta
+                meta_new.group        = meta
+                return [ meta_new, [ fasta[0] ] ]
+            }
+        )
+    }
+
+    //-------------------------------------
+    // Load input --virus_fnas
+    //-------------------------------------
+    if ( params.virus_fnas ) {
+        ch_input_virus_fastas = ch_input_virus_fastas.mix(
+            channel.fromPath(params.ch_input_virus_fastas, size:-1)
+            .map { meta, virus_fasta ->
+                def meta_new = [:]
+                meta_new.id           = meta
+                meta_new.group        = meta
+                return [ meta_new, [ virus_fasta[0] ] ]
+            }
+        )
+    }
+
+    //-------------------------------------------
+    // WORKFLOW: MINE
+    // inputs:
+    // - [ [ meta ], assembly.fna.gz ]
+    // - [ [ meta ], virus.fna.gz ]
+    // - [ [ meta ], reads.spring ]
+    // outputs:
+    // - [ [ meta ], assembly.fna.gz ]
+    // - [ [ meta ], virus.fna.gz ]
+    // - [ [ meta ], virus_summary.tsv.gz ]
+    // - [ [ meta ], hq_virus.fna.gz ]
+    // - [ [ meta ], filter_summary.tsv.gz ]
+    // steps:
+    // - ASSEMBLE (subworkflow)
+    // - CLASSIFY (subworkflow)
+    // - FILTER (subworkflow)
+    //--------------------------------------------
+    MINE(
+        ch_preprocessed_spring,
+        ch_input_fastas,
+        ch_input_virus_fastas
+    )
+
+    if ( params.run_assemble ) {
+        // ch_assembly_fna_gz       = MINE.out.assembly_fna_gz
+    } else {
+        ch_assembly_fna_gz      = ch_input_fastas
+    }
+
+    if ( params.run_classify ) {
+        // ch_virus_fna_gz          = MINE.out.virus_fna_gz
+        // ch_virus_summary_tsv_gz  = MINE.out.virus_summary_tsv_gz
+    }  else {
+        //
+        // MODULE: Download geNomad database
+        //
+        GENOMAD_DOWNLOADDATABASE()
+
+        //
+        // MODULE: Run geNomad end-to-end on input virus sequences
+        //
+        GENOMAD_ENDTOEND(
+            ch_input_virus_fastas,
+            GENOMAD_DOWNLOADDATABASE.out.genomad_db.collect()
+        )
+        ch_virus_summary_tsv_gz = GENOMAD_ENDTOEND.out.summary_tsv_gz
+    }
+
+    if ( params.run_filter ) {
+        // ch_hq_virus_fna_gz     = MINE.out.hq_virus_fna_gz
+        // ch_filter_summary_tsv_gz  = MINE.out.filter_summary_tsv_gz
+    }
+
+    //-------------------------------------------
+    // WORKFLOW: ANNOTATE
+    // inputs:
+    // - [ [ meta ], virus.fna.gz ]
+    // - [ [ meta ], hq_virus.fna.gz ]
+    // - [ [ meta ], virus_summary.tsv.gz ]
+    // outputs:
+    // - [ [ meta ], crisprhost.tsv.gz ]
+    // - [ [ meta ], phisthost.tsv.gz ]
+    // - [ [ meta ], tophit.tsv.gz ]
+    // - [ [ meta ], taxonomy.tsv.gz ]
+    // - [ [ meta ], bakta.gbk.gz ]
+    // - [ [ meta ], phrogs.tsv.gz ]
+    // - [ [ meta ], empathi.tsv.gz ]
+    // - [ [ meta ], lifestyle.tsv.gz ]
+    // steps:
+    // - CRISPRHOST (subworkflow)
+    // - PHIST (subworkflow)
+    // - TAXONOMY (subworkflow)
+    // - FUNCTION (subworkflow)
+    // - LIFESTYLE (subworkflow)
+    //--------------------------------------------
+    ANNOTATE(
+        ch_input_virus_fastas.mix(ch_virus_fna_gz).mix(ch_hq_virus_fna_gz),
+        ch_virus_summary_tsv_gz
+    )
+
+    //-------------------------------------------
+    // WORKFLOW: UPDATE
+    // inputs:
+    // - [ [ meta ], hq_virus.fna.gz ]
+    // - [ [ meta ], filter_summary.tsv.gz ]
+    // - params.uhvdb_dir
+    // outputs:
+    // - [ [ meta ], clusters.tsv.gz ]
+    // - [ [ meta ], metadata.tsv.gz ]
+    // - [ [ meta ], unique.fna.gz ]
+    // - [ [ meta ], dedup.fna.gz ]
+    // - [ [ meta ], genomovar_reps.fna.gz ]
+    // - [ [ meta ], genomovar_reps.faa.gz ]
+    // - [ [ meta ], species_reps.fna.gz ]
+    // - [ [ meta ], species_reps.faa.gz ]
+    // - [ [ meta ], species_graph.txt.gz ]
+    // - [ [ meta ], family_graph.txt.gz ]
+    // steps:
+    // - ANICLUSTER (subworkflow)
+    // - AAICLUSTER (subworkflow)
+    //--------------------------------------------
+    // UPDATE(
+    //     ch_hq_virus_fna_gz,
+    //     ch_filter_summary_tsv_gz
+    // )
+
+    //-------------------------------------------
+    // WORKFLOW: ANALYZE
+    // inputs:
+    // - [ [ meta ], reads.spring ]
+    // - [ [ meta ], assembly.fna.gz ]
+    // - [ [ meta ], virus_summary.tsv.gz ]
+    // - params.uhvdb_dir
+    // outputs:
+    // - [ [ meta ], profile.tsv.gz ]
+    // - [ [ meta ], ref_activity.tsv.gz ]
+    // - [ [ meta ], assembly_activity.tsv.gz ]
+    // - [ [ meta ], instrain_profile.tsv.gz ]
+    // - [ [ meta ], instrain_compare.tsv.gz ]
+    // steps:
+    // - REFERENCEANALYZE (subworkflow)
+    // - ASSEMBLYANALYZE (subworkflow)
+    //--------------------------------------------
+    // ANALYZE(
+    //     ch_preprocessed_fastq_gz,
+    //     ch_uhvdb_dir,
+    //     ch_assembly_fna_gz,
+    //     ch_virus_summary_tsv_gz
+    // )
+
+    //-------------------------------------
+    // Compare novel viruses to UHVDB
+    //-------------------------------------
+    // // Identify viruses in the same family
+    // // Create MSA with TWILIGHT
+    // // Visualize phylogeny with DIPPER
+    // // Create panMAT with PanMan
 }

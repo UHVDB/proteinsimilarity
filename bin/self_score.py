@@ -2,7 +2,6 @@
 
 import argparse
 import polars as pl
-import gzip
 
 pl.Config.set_streaming_chunk_size(10_000)
 
@@ -14,12 +13,12 @@ def parse_args(args=None):
     parser.add_argument(
         "-i",
         "--input",
-        help="Path to PARQUET created by DIAMOND (should include self-alignments).",
+        help="Path to TSV created by DIAMOND (should include self-alignments).",
     )
     parser.add_argument(
         "-o",
         "--output",
-        help="Output PARQUET containing AAI self-alignment score.",
+        help="Output TSV containing AAI self-alignment score.",
     )
     parser.add_argument('--version', action='version', version='1.0.0')
     return parser.parse_args(args)
@@ -29,9 +28,9 @@ def calculate_self_score(input, output):
     
     # write streaming code
     self_score = (
-        pl.scan_parquet(input)
-            .select(['column00', 'column01', 'column11'])
-            .rename({'column00':'query', 'column01':'reference', 'column11':'bitscore'})
+        pl.scan_csv(input, separator='\t', has_header=False)
+            .select(['column_1', 'column_1', 'column_12'])
+            .rename({'column_1':'query', 'column_1':'reference', 'column_12':'bitscore'})
             .filter(pl.col('query') == pl.col('reference'))
             .with_columns([
                 pl.col('query').str.replace(r'_\d+$', '').cast(pl.Categorical).alias('genome')
@@ -45,7 +44,7 @@ def calculate_self_score(input, output):
     )
 
     # write out parquet
-    self_score.sink_parquet(output)
+    self_score.sink_csv(output, separator='\t', has_header=True)
 
 
 def main(args=None):

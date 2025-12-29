@@ -1,13 +1,7 @@
 #!/usr/bin/env python
 
 import argparse
-import csv
-import gzip
-import os
 import polars as pl
-import shutil
-
-from collections import defaultdict
 
 pl.Config.set_streaming_chunk_size(10_000)
 
@@ -50,9 +44,9 @@ def aai_main(input, self_score, output, min_score):
 
     # read ref parquet
     norm_score = (
-        pl.scan_parquet(input)
-            .select(['column00', 'column01', 'column11']) # select subset of columns
-            .rename({'column00':'q_gene', 'column01':'r_gene', 'column11':'bitscore'}) # rename columns
+        pl.tsv(input, separator='\t', has_header=False)
+            .select(['column_1', 'column_2', 'column_11']) # select subset of columns
+            .rename({'column_1':'q_gene', 'column_2':'r_gene', 'column_11':'bitscore'}) # rename columns
             .with_columns([
                 pl.col('q_gene').str.replace(r'_\d+$', '').cast(pl.Categorical).alias('query'), # extract genome IDs
                 pl.col('r_gene').str.replace(r'_\d+$', '').cast(pl.Categorical).alias('reference'),

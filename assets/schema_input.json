@@ -1,0 +1,65 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://raw.githubusercontent.com/UHVDB/toolkit/master/assets/schema_input.json",
+    "title": "UHVDB/toolkit pipeline - params.input schema",
+    "description": "Schema for the file provided with params.input",
+    "type": "array",
+    "items": {
+        "type": "object",
+        "properties": {
+            "sample": {
+                "type": "string",
+                "pattern": "^\\S+$",
+                "meta": ["id"],
+                "unique": true,
+                "errorMessage": "Identifier used to name samples."
+            },
+            "project": {
+                "type": "string",
+                "pattern": "^\\S+$",
+                "meta": ["project"],
+                "errorMessage": "BioProject ID or Project identifier for a study."
+            },
+            "group": {
+                "meta": ["group"],
+                "errorMessage": "Group that a sample is a member of (used for coassembly)."
+            },
+            "biosample": {
+                "type": "string",
+                "pattern": "^\\S+$",
+                "meta": ["biosample"],
+                "errorMessage": "Biosample ID associated with assembly."
+            },
+            "acc": {
+                "type": "string",
+                "meta": ["acc"],
+                "errorMessage": "SRA run accession ID."
+            },
+            "fastq_1": {
+                "type": "string",
+                "pattern": "^\\S+$",
+                "unique": true,
+                "errorMessage": "FastQ1 files cannot contain spaces and must have extension 'fastq', or 'fq' all optionally gzipped."
+            },
+            "fastq_2": {
+                "type": "string",
+                "pattern": "^\\S+$",
+                "unique": true,
+                "errorMessage": "FastQ 2 files cannot contain spaces and must have extension 'fastq', or 'fq' all optionally gzipped."
+            },
+            "fna": {
+                "type": "string",
+                "pattern": "^\\S+$",
+                "unique": true,
+                "errorMessage": "Fasta (FNA) files cannot contain spaces and must have extension 'fasta', 'fa', or 'fna' all optionally gzipped."
+            },
+            "virus_fna": {
+                "type": "string",
+                "pattern": "^\\S+$",
+                "unique": true,
+                "errorMessage": "Virus fasta (FNA) files cannot contain spaces and must have extension 'fasta', 'fa', or 'fna' all optionally gzipped."
+            }
+        },
+        "required": ["sample", "project", "group"]
+    }
+}
