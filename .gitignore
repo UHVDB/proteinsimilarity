@@ -10,3 +10,4 @@ dbs/
 .singularity-cache/
 .conda-cache/
 .apptainer-cache/
+databases/*

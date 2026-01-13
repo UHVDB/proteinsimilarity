@@ -3,7 +3,6 @@ process EMPATHI_EMPATHI {
     label "process_medium"
     container null
     conda "${moduleDir}/environment.yml"
-    publishDir "${params.output_dir}/annotate/empathi"  , mode: 'copy'  , pattern: "${meta.id}.empathi.csv.gz"
 
     input:
     tuple val(meta) , path(csv_gz)
@@ -14,8 +13,10 @@ process EMPATHI_EMPATHI {
 
     script:
     """
-    gunzip -f ${csv_gz}
+    ### Decompress
+    gunzip -f -c ${csv_gz} > ${csv_gz.getBaseName()}
 
+    ### Run empathi
     empathi \\
         ${csv_gz.getBaseName()} \\
         results \\
@@ -25,7 +26,11 @@ process EMPATHI_EMPATHI {
         --output_folder ./ \\
         --confidence 0.5
 
+    ### Compress
     mv results/predictions_results.csv ${meta.id}.empathi.csv
     gzip ${meta.id}.empathi.csv
+
+    ### Cleanup
+    rm -rf results/ ${csv_gz.getBaseName()}
     """
 }

@@ -10,7 +10,7 @@ process PADLOC_PADLOC {
     path(db)
 
     output:
-    tuple val(meta), path("${meta.id}.padloc.csv.gz")   , emit: csv_gz
+    tuple val(meta), path("${meta.id}.padloc.csv.gz")   , emit: csv_gz  , optional: true
 
     script:
     """
@@ -31,12 +31,13 @@ process PADLOC_PADLOC {
 
     # move desired output files to appropriate location
     if [ ! -s padloc_out/*.csv ]; then
-        echo "No defense systems found" > ${meta.id}.padloc.csv
+        echo "No defense systems found"
+        touch ${meta.id}.padloc.csv
+        gzip ${meta.id}.padloc.csv
     else
         mv padloc_out/*_padloc.csv ${meta.id}.padloc.csv
+        gzip ${meta.id}.padloc.csv
     fi
-
-    gzip ${meta.id}.padloc.csv
 
     rm -rf padloc_out
     """

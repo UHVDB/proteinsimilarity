@@ -13,11 +13,11 @@ process PSEUDOFINDER_ANNOTATE {
 
     script:
     """
-    gunzip -f ${gbk}
-    gunzip -f ${tsv}
+    ### Decompress
+    gunzip -f -c ${gbk} > ${gbk.getBaseName()}
+    gunzip -f -c ${tsv} > ${tsv.getBaseName()}
 
-    # extract proteins without Bakta or Foldseek hits
-    # if tsv is not empty
+    ### Extract nohit proteins
     if [ \$(wc -l < ${tsv.getBaseName()}) -gt 0 ]; then
         extract_nohit_proteins2.py \\
                 --input_gbk ${gbk.getBaseName()} \\
@@ -28,7 +28,7 @@ process PSEUDOFINDER_ANNOTATE {
         gbk_new=${gbk.getBaseName()}
     fi
 
-    # run pseudofiner on proteins still without hits
+    ### Run pseudofinder
     python ${mod}/pseudofinder.py annotate \\
         -g \$gbk_new \\
         -db ${db} \\
@@ -37,9 +37,13 @@ process PSEUDOFINDER_ANNOTATE {
         --sensitivity="--very-sensitive" \\
         -op ${meta.id}
 
+    ### Compress
     mv ${meta.id}_pseudos.gff ${meta.id}.pseudofinder.gff
     gzip ${meta.id}.pseudofinder.gff
 
-    rm -rf ${meta.id}_pseudos* ${meta.id}_intact* ${tsv.getBaseName()} ${gbk.getBaseName()}
+    ### Cleanup
+    rm -rf ${meta.id}_pseudos* ${meta.id}_intact* ${tsv.getBaseName()} ${gbk.getBaseName()} \\
+        ${meta.id}_nohit2.gbk ${meta.id}_*.fasta ${meta.id}_*.html ${meta.id}_*.tsv \\
+        ${meta.id}_*.txt ${meta.id}_*.pdf ${meta.id}_*.faa 
     """
 }

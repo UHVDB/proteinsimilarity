@@ -1,7 +1,7 @@
 process PSEUDOFINDER_MAKEDB {
-    tag "pseudofinder_db"
     container 'quay.io/microbiome-informatics/pseudofinder:1.1.0'
-    storeDir "${params.db_dir}/pseudofinder"
+    storeDir "${params.db_dir}/pseudofinder/${new java.util.Date().format('yyyy_MM')}"
+    tag "swissprot v${new java.util.Date().format('yyyy_MM')}"
 
     input:
     path(fasta)

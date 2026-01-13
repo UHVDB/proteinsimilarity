@@ -9,15 +9,15 @@ process FOLDSEEK_EASYSEARCH {
     path(ref_db)
 
     output:
-    tuple val(meta), path("${meta.id}_nohit_v_refDB.m8.gz") , emit: m8_gz
+    tuple val(meta), path("${meta.id}_nohit_v_refDB.tsv.gz")    , emit: tsv_gz
 
     script:
     """
-    # align nohit proteins to foldseek database
+    ### Run foldseek
     foldseek easy-search \\
         ${meta.id}_3di_db \\
         viral_ref_db \\
-        ${meta.id}_nohit_v_refDB.m8 \\
+        ${meta.id}_nohit_v_refDB.tsv \\
         tmp \\
         --threads ${task.cpus} \\
         -e 1e-3 \\
@@ -25,8 +25,10 @@ process FOLDSEEK_EASYSEARCH {
         -c 0.9 \\
         --max-seqs 1000
 
-    rm -rf tmp
+    ### Compress
+    gzip ${meta.id}_nohit_v_refDB.tsv
 
-    gzip ${meta.id}_nohit_v_refDB.m8
+    ### Cleanup
+    rm -rf tmp
     """
 }

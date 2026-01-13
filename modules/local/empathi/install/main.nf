@@ -1,9 +1,10 @@
 process EMPATHI_INSTALL {
-    tag "empathi_models"
     label "process_gpu"
     container null
     conda "${moduleDir}/environment.yml"
-    storeDir "${params.db_dir}/empathi"
+    storeDir "${params.db_dir}/empathi/1.0.6"
+    tag "Empathi v1.0.6"
+    
 
     output:
     path("empathi/models/") , emit: models
@@ -19,6 +20,6 @@ process EMPATHI_INSTALL {
 
     # install empathi software
     export PIP_CACHE_DIR=${params.db_dir}/.pip-cache
-    pip install empathi
+    pip install empathi==1.0.6
     """
 }

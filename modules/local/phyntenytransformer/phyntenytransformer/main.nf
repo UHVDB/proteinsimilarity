@@ -13,6 +13,8 @@ process PHYNTENYTRANSFORMER_PHYNTENYTRANSFORMER {
 
     script:
     """
+    export HF_HOME=${params.db_dir}/.huggingface-cache
+    
     gunzip -f ${gbk}
 
     phynteny_transformer \\

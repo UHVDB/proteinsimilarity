@@ -28,9 +28,9 @@ def calculate_self_score(input, output):
     
     # write streaming code
     self_score = (
-        pl.scan_csv(input, separator='\t', has_header=False)
-            .select(['column_1', 'column_1', 'column_12'])
-            .rename({'column_1':'query', 'column_1':'reference', 'column_12':'bitscore'})
+        pl.scan_csv(input, separator='\t', has_header=False, schema_overrides={'column_1': pl.Utf8, 'column_2': pl.Utf8, 'column_12': pl.Float32})
+            .select(['column_1', 'column_2', 'column_12'])
+            .rename({'column_1':'query', 'column_2':'reference', 'column_12':'bitscore'})
             .filter(pl.col('query') == pl.col('reference'))
             .with_columns([
                 pl.col('query').str.replace(r'_\d+$', '').cast(pl.Categorical).alias('genome')
@@ -44,7 +44,7 @@ def calculate_self_score(input, output):
     )
 
     # write out parquet
-    self_score.sink_csv(output, separator='\t', has_header=True)
+    self_score.sink_csv(output, separator='\t', include_header=True)
 
 
 def main(args=None):

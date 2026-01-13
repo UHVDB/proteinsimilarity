@@ -15,7 +15,7 @@ process READ_DOWNLOAD {
 
     script:
     """
-    # Download reads from SRA
+    ### Download with xsra
     xsra dump \\
         ${acc} \\
         --outdir ${acc}/ \\
@@ -44,7 +44,7 @@ process READ_DOWNLOAD {
         touch read1
     fi
 
-    # Run fastp on raw reads
+    ### Run fastp
     fastp \\
         \${fastp_reads_in} \\
         \${fastp_reads_out} \\
@@ -53,7 +53,7 @@ process READ_DOWNLOAD {
         --thread ${task.cpus} \\
         --detect_adapter_for_pe
 
-    # Run deacon on fastp output
+    ### Run deacon
     deacon filter \\
         --deplete \\
         ${index} \\
@@ -63,7 +63,7 @@ process READ_DOWNLOAD {
 
     rm -rf *.fastp.fastq.gz
 
-    # Run spring to compress fastq files
+    ### Run spring
     spring \\
         --compress \\
         --input \${spring_input} \\
@@ -72,6 +72,7 @@ process READ_DOWNLOAD {
         --gzipped-fastq \\
         --output-file ${meta.id}.spring
 
-    rm -rf ${meta.id}.deacon*
+    ### Cleanup
+    rm -rf ${meta.id}*deacon*.fastq.gz *.fastp.html *.fastp.json ${acc}/
     """
 }

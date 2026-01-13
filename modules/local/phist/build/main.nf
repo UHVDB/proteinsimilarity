@@ -1,4 +1,4 @@
-process KMERDB_BUILD {
+process PHIST_BUILD {
     tag "${meta.id}"
     label "process_super_high"
     container "https://community-cr-prod.seqera.io/docker/registry/v2/blobs/sha256/99/99cdbbc8ee707435804fe59e2b78583703a8204b91b88681eb04e4cc1ec8bb23/data"
@@ -8,8 +8,7 @@ process KMERDB_BUILD {
     tuple val(meta) , path(fna)
 
     output:
-    tuple val(meta) , path("${meta.id}.kdb")    , emit: kdb
-    path("versions.yml")                        , emit: versions
+    tuple val(meta) , path("virus.kdb") , emit: kdb
 
     script:
     """
@@ -21,11 +20,6 @@ process KMERDB_BUILD {
         -t ${task.cpus} \\
         -multisample-fasta \\
         input.list \\
-        ${meta.id}.kdb
-    
-    cat <<-END_VERSIONS > versions.yml
-    "${task.process}":
-        kmer-db: \$( kmer-db --version 2>&1 | head -n 1 | sed -e 's/Kmer-db version //g; s/ .*//g' )
-    END_VERSIONS
+        virus.kdb
     """
 }

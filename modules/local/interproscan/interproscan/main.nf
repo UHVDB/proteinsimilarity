@@ -13,22 +13,26 @@ process INTERPROSCAN_INTERPROSCAN {
 
     script:
     """
-    # Enforce encoding to prevent errors from non-ASCII characters in FASTA headers
+    ### Run InterProScan ###
     export JAVA_TOOL_OPTIONS="-Dfile.encoding=UTF-8"
 
-    gunzip -f ${faa}
+    gunzip -c -f ${faa} > ${faa.getBaseName()}
+    # replace all '*' characters to avoid InterProScan errors
+    sed -i 's/*//g' ${faa.getBaseName()}
 
-    # run interproscan
     bash ./${db}/interproscan.sh \\
         -cpu ${task.cpus} \\
         -dp \\
         --goterms \\
-        -pa \\
         --input ${faa.getBaseName()} \\
         --output-file-base ${meta.id}.interproscan
 
+    ### Compress outputs ###
     gzip ${meta.id}.interproscan.tsv
+    # TODO: Replace with pigz
 
-    rm -rf ${meta.id}.interproscan.xml ${meta.id}.interproscan.json ${meta.id}.interproscan.gff3 ${faa.getBaseName()}
+    ### Cleanup ###
+    rm -rf ${meta.id}.interproscan.xml ${meta.id}.interproscan.json ${meta.id}.interproscan.gff3 \\
+        ${faa.getBaseName()} temp
     """
 }

@@ -6,12 +6,11 @@ process PHIST_ARIA2C {
     // Singularity: https://wave.seqera.io/view/builds/bd-3d125c4d72f5a9ac_1?_gl=1*13x4irc*_gcl_au*NjY1ODA2Mjk0LjE3NjM0ODUwMTIuOTE2NTY5NTQzLjE3NjY0MjU0MjkuMTc2NjQyNTQyOA..
 
     input:
-    tuple val(meta), val(urls)
-    path(virus_db)
+    tuple val(meta) , val(urls)
+    tuple val(meta2), path(virus_db)
 
     output:
     tuple val(meta), path("${meta.id}.phist.csv.gz")    , emit: csv_gz
-    path("versions.yml")                                , emit: versions
 
     script:
     def download_list   = urls.collect { url -> url.toString() }.join(',')

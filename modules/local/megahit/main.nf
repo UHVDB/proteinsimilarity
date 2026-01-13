@@ -9,30 +9,28 @@ process MEGAHIT {
 
     output:
     tuple val(meta), path("${meta.id}.contigs.fna.gz")  , emit: fna_gz
-    tuple val(meta), path("${meta.id}.megahit.log")     , emit: megahit_log
+    tuple val(meta), path("${meta.id}.megahit.log.gz")  , emit: log_gz
 
     script:
     def spring_out      = meta.single_end ? "${meta.id}.fastq.gz" : "${meta.id}_R1.fastq.gz ${meta.id}_R2.fastq.gz"
     def megahit_reads   = meta.single_end ? "-r ${meta.id}.fastq.gz" : "-1 ${meta.id}_R1.fastq.gz -2 ${meta.id}_R2.fastq.gz"
     """
-    # decompress spring
+    ### Extract spring archive ###
     spring \\
         --decompress \\
         --input-file ${spring} \\
         --output-file ${spring_out} \\
-        --gzipped_fastq \\
+        --gzipped-fastq \\
         --num-threads ${task.cpus}
 
-    # assemble with megahit
+    ### Megahit assembly ###
     megahit \\
         -t ${task.cpus} \\
         --k-list 21,29,39,59,79,99,119,141,163,185,207,229,251 \\
         ${megahit_reads} \\
         --out-prefix ${meta.id}
 
-    rm -rf *.fastq.gz
-
-    # length filter with seqkit
+    ### Seqkit length filter and rename ###
     seqkit \\
         seq \\
         megahit_out/${meta.id}.contigs.fa \\
@@ -40,8 +38,9 @@ process MEGAHIT {
         --threads ${task.cpus} \\
     | seqkit replace -p "^" -r "${meta.id}_" --out-file ${meta.id}.contigs.fna.gz
 
-    rm -rf megahit_out/
+    gzip -c megahit_out/*log > ${meta.id}.megahit.log.gz
 
-    gzip -c megahit_out/*log > ${meta.id}.megahit.log
+    ### CLeanup ###
+    rm -rf megahit_out/ *.fastq.gz
     """
 }

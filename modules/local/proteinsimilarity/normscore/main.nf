@@ -5,26 +5,21 @@ process PROTEINSIMILARITY_NORMSCORE {
     // Singularity: https://wave.seqera.io/view/builds/bd-8060f2888f702769_1?_gl=1*7w7ki4*_gcl_au*NjY1ODA2Mjk0LjE3NjM0ODUwMTIuOTE2NTY5NTQzLjE3NjY0MjU0MjkuMTc2NjQyNTQyOA..
 
     input:
-    tuple val(meta), path(self_tsv_gz), path(ref_tsv_gz)
+    tuple val(meta) , path(self_tsv_gz) , path(ref_tsv_gz)
 
     output:
-    tuple val(meta), path("${meta.id}.normscore.tsv.gz")    , emit: tsv_gz
+    tuple val(meta) , path("${meta.id}.normscore.tsv.gz")   , emit: tsv_gz
 
     script:
     """
-    # calculate normalized bitscore
+    ### Calculate normalized bitscore
     norm_score.py \\
-        --input ${self_tsv_gz} \\
-        --self_score ${ref_tsv_gz} \\
-        --min_score ${params.min_score} \\
+        --input ${ref_tsv_gz} \\
+        --self_score ${self_tsv_gz} \\
+        --min_score ${params.min_normscore} \\
         --output ${meta.id}.normscore.tsv
 
+    ### Compress
     gzip ${meta.id}.normscore.tsv
-
-    cat <<-END_VERSIONS > versions.yml
-    "${task.process}":
-        python: \$( python --version | sed -e "s/Python //g" )
-        polars: \$(python -c "import polars; print(polars.__version__)")
-    END_VERSIONS
     """
 }

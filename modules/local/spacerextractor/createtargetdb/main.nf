@@ -8,21 +8,21 @@ process SPACEREXTRACTOR_CREATETARGETDB {
     tuple val(meta) , path(fna_gz)
 
     output:
-    path("virus_targets_db/")   , emit: db
+    tuple val(meta) , path("virus_targets_db/")   , emit: db
 
     script:
     """
     # if gzipped, decompress virus fasta
-    gzip -c -d ${fna_gz} > ${fna_gz.getBaseName}
+    gunzip -f -c ${fna_gz} > ${fna_gz.getBaseName()}
 
     # create spacerextractor target db
     spacerextractor \\
         create_target_db \\
-            -i ${fna_gz.getBaseName} \\
+            -i ${fna_gz.getBaseName()} \\
             -d virus_targets_db \\
             -t ${task.cpus} \\
             --replace_spaces
 
-    rm ${fna_gz.getBaseName}
+    rm ${fna_gz.getBaseName()}
     """
 }

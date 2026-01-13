@@ -15,7 +15,7 @@ process DEFENSEFINDER_RUN {
 
     script:
     """
-    # run defense-finder
+    ### Run defense-finder
     defense-finder run \\
         ${faa} \\
         -o ${meta.id} \\
@@ -26,7 +26,10 @@ process DEFENSEFINDER_RUN {
     mv ${meta.id}/*_defense_finder_genes.tsv ${meta.id}.defense_finder_genes.tsv
     mv ${meta.id}/*_defense_finder_hmmer.tsv ${meta.id}.defense_finder_hmm.tsv
 
+    ### Compress
     gzip ./*.tsv
-    rm -rf ${meta.id}/
+
+    ### Cleanup
+    rm -rf ${meta.id}/ *.idx
     """
 }

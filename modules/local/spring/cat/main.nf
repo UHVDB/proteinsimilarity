@@ -11,36 +11,46 @@ process SPRING_CAT {
     tuple val(meta), path("${meta.id}.spring")  , emit: spring
 
     script:
+    def spring_list     = springs.collect { spring -> spring.toString() }.join(',')
     """
+    IFS=',' read -r -a spring_array <<< "${spring_list}"
+
     ### Extract spring archive ###
-    for spring in \${springs[@]}; do
+    for spring in "\${spring_array[@]}"; do
+        echo \$spring
         spring \\
             --decompress \\
             --input-file \$spring \\
-            --output-file \${spring}.fastq \\
-            --gzipped_fastq \\
+            --output-file \${spring}.fastq.gz \\
+            --gzipped-fastq \\
             --num-threads ${task.cpus}
     done
 
     ### Concatenate fastqs ###
-    cat *.fastq.gz.1 > all_R1.fastq.gz
-    if ls *.fastq.gz.2 1> /dev/null 2>&1; then
-        cat *.fastq.gz.2 > all_R2.fastq.gz
+    for spring in "\${spring_array[@]}"; do
+        echo \$spring
+        if [ -f \${spring}.fastq.gz.2 ]; then
+            cat \${spring}.fastq.gz.1 >> combined_R1.fastq.gz
+            cat \${spring}.fastq.gz.2 >> combined_R2.fastq.gz
+        else
+            cat \${spring}.fastq.gz >> combined.fastq.gz
+        fi
+    done
 
     ### Convert to spring ###
-    if ls all_R2.fastq.gz 1> /dev/null 2>&1; then
+    if [ -f combined_R2.fastq.gz ]; then
         spring \\
             --compress \\
-            --input-file all_R1.fastq.gz all_R2.fastq.gz \\
+            --input-file combined_R1.fastq.gz combined_R2.fastq.gz \\
             --output-file ${meta.id}.spring \\
-            --gzipped_fastq \\
+            --gzipped-fastq \\
             --num-threads ${task.cpus}
     else
         spring \\
             --compress \\
-            --input-file all_R1.fastq.gz \\
+            --input-file combined.fastq.gz \\
             --output-file ${meta.id}.spring \\
-            --gzipped_fastq \\
+            --gzipped-fastq \\
             --num-threads ${task.cpus}
     fi
 

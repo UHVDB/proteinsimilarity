@@ -19,13 +19,16 @@ workflow ASSEMBLE {
         ch_coassembly_spring = reads_spring
             .map { meta, spring ->
                 def grouping        = [:]
-                grouping.group      = meta.coassembly_group
+                grouping.group      = meta.group
                 grouping.single_end = meta.single_end
                 grouping.from_sra   = meta.from_sra
 
                 [ grouping, meta, spring ]
             }
             .groupTuple( by: 0, sort:'deep' )
+            .filter { _grouping, _meta, springs ->
+                springs.size() > 1
+            }
             .map { grouping, meta, spring ->
                 def meta_new                = [:]
                 meta_new.id                 = "${grouping.group}_coassembly".toString()
@@ -54,9 +57,19 @@ workflow ASSEMBLE {
         ch_reads_spring = reads_spring.mix(SPRING_CAT.out.spring)
     }
 
-    //
-    // MODULE: Assemble reads with MEGAHIT
-    //
+    //-------------------------------------------
+    // MODULE: MEGAHIT
+    // inputs:
+    // - [ [ meta ], reads.spring ]
+    // outputs:
+    // - [ [ meta ], assembly.fna.gz ]
+    // - [ [ meta ], megahit.log.gz ]
+    // steps:
+    // - Extract spring archive (script)
+    // - Megahit assembly (script)
+    // - Seqkit length filter and rename (script)
+    // - CLeanup (script)
+    //--------------------------------------------
     MEGAHIT(
         ch_reads_spring
     )

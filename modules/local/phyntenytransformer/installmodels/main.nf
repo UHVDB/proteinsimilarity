@@ -1,9 +1,10 @@
 process PHYNTENYTRANSFORMER_INSTALLMODELS {
-    tag "phynteny_db"
     label 'process_gpu'
     container null
     conda "${moduleDir}/environment.yml"
-    storeDir "${params.db_dir}/phynteny"
+    storeDir "${params.db_dir}/phynteny/0.1.3"
+    tag "Phynteny v0.1.3"
+    
 
     output:
     path("phynteny_db/")    , emit: db

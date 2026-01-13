@@ -1,14 +1,9 @@
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    proteinsimilarity
+    IMPORT PLUGINS/FUNCTIONS/MODULES/SUBWORKFLOWS/WORKFLOWS
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
-
-/*
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    IMPORT LOCAL PLUGINS/FUNCITONS/MODULES/SUBWORKFLOWS/WORKFLOWS
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-*/
+// MODULES
 include { DIAMOND_BLASTP                } from '../../../modules/local/diamond/blastp'
 include { DIAMOND_BLASTPSELF            } from '../../../modules/local/diamond/blastpself'
 include { DIAMOND_MAKEDB                } from '../../../modules/local/diamond/makedb'
@@ -17,23 +12,11 @@ include { PROTEINSIMILARITY_SELFSCORE   } from '../../../modules/local/proteinsi
 include { PROTEINSIMILARITY_NORMSCORE   } from '../../../modules/local/proteinsimilarity/normscore'
 include { PROTEINSIMILARITY_COMBINE     } from '../../../modules/local/proteinsimilarity/combine'
 include { PYRODIGALGV                   } from '../../../modules/local/pyrodigalgv'
-include { SEQKIT_SPLIT2                 } from '../../../modules/local/seqkit/split2'
 
-/*
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    IMPORT NF-CORE PLUGINS/FUNCITONS/MODULES/SUBWORKFLOWS/WORKFLOWS
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-*/
-
-
-
-//
-// Run workflow
-//
 workflow PROTEINSIMILARITY {
 
     take:
-    hq_virus_fna_gz // channel: [ [ meta ], fna.gz ]
+    split_virus_fna_gz // channel: [ [ meta ], fna.gz ]
 
     main:
 
@@ -67,26 +50,10 @@ workflow PROTEINSIMILARITY {
     }
 
     //
-    // MODULE: Split input FNA file into chunks
-    //
-    SEQKIT_SPLIT2(
-        channel.fromPath(params.query_fna)
-            .map { fna ->
-                [ [ id: "${fna.getBaseName()}" ], fna ]
-            }
-    )
-    ch_split_fastas = SEQKIT_SPLIT2.out.fastas
-        .map { _meta, fastas -> fastas }
-        .flatten()
-        .map { fastas ->
-            [ [ id: fastas.getBaseName() ], fastas ]
-        }
-
-    //
     // MODULE: Run DIAMOND against ICTV VMR database
     //
     DIAMOND_BLASTP(
-        ch_split_fastas,
+        split_virus_fna_gz,
         ch_vmr_dmnd.collect()
     )
 

@@ -39,20 +39,20 @@ def parse_args(args=None):
 def aai_main(input, self_score, output, min_score):
 
     # read self score and convert to dict
-    self_score_df = pl.read_parquet(self_score).select(['genome', 'selfscore'])
+    self_score_df = pl.read_csv(self_score, separator='\t', has_header=True).select(['genome', 'selfscore'])
     self_score_dict = {k: v[0] for k, v in self_score_df.rows_by_key(key=["genome"], unique=True).items()}
 
-    # read ref parquet
+    # read ref tsv
     norm_score = (
-        pl.tsv(input, separator='\t', has_header=False)
-            .select(['column_1', 'column_2', 'column_11']) # select subset of columns
-            .rename({'column_1':'q_gene', 'column_2':'r_gene', 'column_11':'bitscore'}) # rename columns
+        pl.scan_csv(input, separator='\t', has_header=False, schema_overrides={'column_1': pl.Utf8, 'column_2': pl.Utf8, 'column_12': pl.Float32})
+            .select(['column_1', 'column_2', 'column_12']) # select subset of columns
+            .rename({'column_1':'q_gene', 'column_2':'r_gene', 'column_12':'bitscore'}) # rename columns
             .with_columns([
                 pl.col('q_gene').str.replace(r'_\d+$', '').cast(pl.Categorical).alias('query'), # extract genome IDs
                 pl.col('r_gene').str.replace(r'_\d+$', '').cast(pl.Categorical).alias('reference'),
                 pl.col('q_gene').cast(pl.Categorical)
             ])
-            .filter(pl.col('query') != 'reference') # do not look at self hits
+            .filter(pl.col('query') != pl.col('reference')) # do not look at self hits
             .group_by(['q_gene', 'query', 'reference']) 
             .agg([pl.col('bitscore').max()]) # keep only one query_gene -> ref_genome hit (top scoring)
             .group_by(['query', 'reference'])

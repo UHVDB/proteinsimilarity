@@ -14,9 +14,10 @@ process PHOLD_COMPARE {
 
     script:
     """
-    gunzip -f ${gbk}
+    ### Decompress
+    gunzip -f -c ${gbk} > ${gbk.getBaseName()}
 
-    # run phold on all fasta files
+    ### Run phold
     phold compare \\
         --input ${gbk.getBaseName()} \\
         --predictions_dir ${predict} \\
@@ -24,19 +25,18 @@ process PHOLD_COMPARE {
         --database ${db} \\
         --output ${meta.id}_phold
 
-    rm -rf ${gbk.getBaseName()}
-
-    # clean intermediate files
-    rm -rf ${meta.id}_phold/logs ${meta.id}_phold/sub_db_tophits \\
-        ${meta.id}_phold/phold_3di.fasta ${meta.id}_phold/phold_aa.fasta \\
-        ${meta.id}_phold/phold_all_cds_functions.tsv \\
-        ${meta.id}_phold/phold_run*.log
-
-    # move desired output files to appropriate location
+    ### Compress
     mv ${meta.id}_phold/phold_per_cds_predictions.tsv ${meta.id}.phold.tsv
     mv ${meta.id}_phold/phold.gbk ${meta.id}.phold.gbk
 
     gzip ${meta.id}.phold.tsv
     gzip ${meta.id}.phold.gbk
+
+    ### Cleanup
+    rm -rf ${meta.id}_phold/logs ${meta.id}_phold/sub_db_tophits \\
+        ${meta.id}_phold/phold_3di.fasta ${meta.id}_phold/phold_aa.fasta \\
+        ${meta.id}_phold/phold_all_cds_functions.tsv \\
+        ${meta.id}_phold/phold_run*.log ${gbk.getBaseName()}_phold \\
+        ${gbk.getBaseName()}
     """
 }

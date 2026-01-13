@@ -31,18 +31,21 @@ def validateInputSamplesheet (input) {
 
 // MODULES
 include { DEACON_INDEXFETCH         } from './modules/local/deacon/indexfetch'
-include { GENOMAD_DOWNLOADDATABASE  } from './modules/local/genomad/downloaddatabase'
-include { GENOMAD_ENDTOEND          } from './modules/local/genomad/endtoend'
-include { READ_DOWNLOAD             } from './modules/local/read/download'
-include { READ_PREPROCESS           } from './modules/local/read/preprocess'
+include { SEQKIT_CONCAT             } from './modules/local/seqkit/concat'
+include { UHVDB_CATHEADER           } from './modules/local/uhvdb/catheader'
+
 
 // SUBWORKFLOWS
-// include { GENOMAD                    } from './subworkflows/local/genomad'
-include { PREPROCESS    } from './subworkflows/local/preprocess'
+include { BAKTA                     } from './subworkflows/local/bakta'
+include { UNIQUE                    } from './subworkflows/local/unique'
+include { PREPROCESS                } from './subworkflows/local/preprocess'
 
 // WORKFLOWS
+// include { ANALYZE                   } from './workflows/local/analyze'
 include { ANNOTATE                  } from './workflows/local/annotate'
+include { COMPARE                   } from './workflows/local/compare'
 include { MINE                      } from './workflows/local/mine'
+// include { UPDATE                    } from './workflows/local/update'
 
 //-------------------------------------------
 // PIPELINE: UHVDB
@@ -70,8 +73,6 @@ workflow {
     ch_input_sra_prefilt    = channel.empty()
     ch_input_fastas         = channel.empty()
     ch_input_virus_fastas   = channel.empty()
-    ch_virus_fna_gz         = channel.empty()
-    ch_hq_virus_fna_gz      = channel.empty()
 
     // Load input samplesheet (--input)
     if (params.input) {
@@ -121,7 +122,7 @@ workflow {
         )
     }
 
-    // Load input --fastqs
+    // Load fastq input (--fastqs)
     if ( params.fastqs ) {
         ch_input_fastqs_prefilt = ch_input_fastqs_prefilt.mix(
             channel.fromFilePairs(params.fastqs, size:-1)
@@ -145,50 +146,52 @@ workflow {
     ch_input_fastqs = ch_input_fastqs_prefilt.filter { _meta, fastqs -> fastqs[0] }
     ch_input_sras   = ch_input_sra_prefilt.filter { _meta, sra -> sra[0] }
 
-    //-------------------------------------------
-    // SUBWORKFLOW: PREPROCESS
-    // inputs:
-    // - [ [ meta ], [ read1.fastq.gz, read1.fastq.gz? ] ]
-    // - [ [ meta ], acc ]
-    // outputs:
-    // - [ [ meta ], spring ]
-    // steps:
-    // - DEACON_INDEXFETCH (module)
-    // - READ_DOWNLOAD (module)
-    // - READ_PREPROCESS (module)
-    //-------------------------------------------
-    PREPROCESS(
-        ch_input_fastqs,
-        ch_input_sras
-    )
-    ch_preprocessed_spring = PREPROCESS.out.preprocessed_spring
+    if ( params.run_assemble || params.run_referenceanalyze ) {
+        //-------------------------------------------
+        // SUBWORKFLOW: PREPROCESS
+        // inputs:
+        // - [ [ meta ], [ read1.fastq.gz, read1.fastq.gz? ] ]
+        // - [ [ meta ], acc ]
+        // outputs:
+        // - [ [ meta ], spring ]
+        // steps:
+        // - DEACON_INDEXFETCH (module)
+        // - READ_DOWNLOAD (module)
+        // - READ_PREPROCESS (module)
+        //-------------------------------------------
+        PREPROCESS(
+            ch_input_fastqs,
+            ch_input_sras
+        )
+        ch_preprocessed_spring = PREPROCESS.out.preprocessed_spring
+    }
 
     //-------------------------------------
-    // Load input --fnas
+    // Load assembly inputs (--fnas)
     //-------------------------------------
     if ( params.fnas ) {
         ch_input_fastas = ch_input_fastas.mix(
-            channel.fromPath(params.fastas, size:-1)
-            .map { meta, fasta ->
-                def meta_new = [:]
-                meta_new.id           = meta
-                meta_new.group        = meta
-                return [ meta_new, [ fasta[0] ] ]
+            channel.fromPath(params.fnas)
+            .map { fasta ->
+                def meta    = [:]
+                meta.id     = fasta.getBaseName()
+                meta.group  = fasta.getBaseName()
+                return [ meta, fasta ]
             }
         )
     }
 
     //-------------------------------------
-    // Load input --virus_fnas
+    // Load virus genome inputs (--virus_fnas)
     //-------------------------------------
     if ( params.virus_fnas ) {
         ch_input_virus_fastas = ch_input_virus_fastas.mix(
-            channel.fromPath(params.ch_input_virus_fastas, size:-1)
-            .map { meta, virus_fasta ->
-                def meta_new = [:]
-                meta_new.id           = meta
-                meta_new.group        = meta
-                return [ meta_new, [ virus_fasta[0] ] ]
+            channel.fromPath(params.virus_fnas)
+            .map { virus_fasta ->
+                def meta    = [:]
+                meta.id     = virus_fasta.getBaseName()
+                meta.group  = virus_fasta.getBaseName()
+                return [ meta, virus_fasta ]
             }
         )
     }
@@ -196,9 +199,9 @@ workflow {
     //-------------------------------------------
     // WORKFLOW: MINE
     // inputs:
+    // - [ [ meta ], reads.spring ]
     // - [ [ meta ], assembly.fna.gz ]
     // - [ [ meta ], virus.fna.gz ]
-    // - [ [ meta ], reads.spring ]
     // outputs:
     // - [ [ meta ], assembly.fna.gz ]
     // - [ [ meta ], virus.fna.gz ]
@@ -210,57 +213,78 @@ workflow {
     // - CLASSIFY (subworkflow)
     // - FILTER (subworkflow)
     //--------------------------------------------
-    MINE(
-        ch_preprocessed_spring,
-        ch_input_fastas,
-        ch_input_virus_fastas
-    )
+    // TODO: Finish MINE workflow implementation
+    if (params.run_assemble || params.run_classify || params.run_filter ) {
+        MINE(
+            ch_preprocessed_spring,
+            ch_input_fastas,
+            ch_input_virus_fastas
+        )
+    }
 
     if ( params.run_assemble ) {
-        // ch_assembly_fna_gz       = MINE.out.assembly_fna_gz
+        // ch_assembly_fna_gz       = MINE.out.assembly_fna_gz.mix(ch_input_fastas)
     } else {
-        ch_assembly_fna_gz      = ch_input_fastas
+        ch_assembly_fna_gz       = ch_input_fastas
     }
 
     if ( params.run_classify ) {
-        // ch_virus_fna_gz          = MINE.out.virus_fna_gz
-        // ch_virus_summary_tsv_gz  = MINE.out.virus_summary_tsv_gz
+        // ch_virus_fna_gz          = MINE.out.virus_fna_gz.map { meta, fna_gz -> [ meta + [ hq: false ], fna_gz ] }
+        // ch_virus_split_fna_gz    = MINE.out.virus_split_fna_gz
+        // ch_virus_summary_tsv_gz  = MINE.out.summary_tsv_gz
     }  else {
-        //
-        // MODULE: Download geNomad database
-        //
-        GENOMAD_DOWNLOADDATABASE()
-
-        //
-        // MODULE: Run geNomad end-to-end on input virus sequences
-        //
-        GENOMAD_ENDTOEND(
-            ch_input_virus_fastas,
-            GENOMAD_DOWNLOADDATABASE.out.genomad_db.collect()
+        //-------------------------------------------
+        // SUBWORKFLOW: UNIQUE
+        // inputs:
+        // - [ [ meta ], virus.fna.gz ]
+        // outputs:
+        // - [ [ meta ], unique_virus.fna.gz ]
+        // - [ [ meta ], unique_virus_split.part_*.fna.gz ] 
+        // - [ [ meta ], unique_virus_summary.tsv.gz ]
+        // steps:
+        // - SEQHASHER (module)
+        // - UHVDB_UNIQUEHASH (module)
+        // - UHVDB_UNIQUESEQ (module)
+        // - SEQKIT_CONCAT (module)
+        //-------------------------------------------
+        UNIQUE(
+            ch_input_virus_fastas
         )
-        ch_virus_summary_tsv_gz = GENOMAD_ENDTOEND.out.summary_tsv_gz
+        ch_unique_virus_fna_gz    = UNIQUE.out.virus_fna_gz
+        ch_split_virus_fna_gz     = UNIQUE.out.virus_split_fna_gz
+        ch_virus_summary_tsv_gz   = UNIQUE.out.virus_summary_tsv_gz
     }
 
     if ( params.run_filter ) {
-        // ch_hq_virus_fna_gz     = MINE.out.hq_virus_fna_gz
-        // ch_filter_summary_tsv_gz  = MINE.out.filter_summary_tsv_gz
+        // ch_unique_virus_fna_gz   = MINE.out.unique_virus_fna_gz
+        // ch_virus_split_fna_gz    = MINE.out.unique_virus_split_fna_gz
+        // ch_virus_summary_tsv_gz  = MINE.out.summary_tsv_gz
     }
 
     //-------------------------------------------
     // WORKFLOW: ANNOTATE
     // inputs:
-    // - [ [ meta ], virus.fna.gz ]
-    // - [ [ meta ], hq_virus.fna.gz ]
-    // - [ [ meta ], virus_summary.tsv.gz ]
+    // - [ [ meta ], unique_virus.fna.gz ]
+    // - [ [ meta ], unique_virus_split.part_*.fna.gz ] 
+    // - [ [ meta ], unique_virus_summary.tsv.gz ]
     // outputs:
+    // - [ [ meta ], bacphlip.tsv.gz ]
+    // - [ [ meta ], bakta.gbk.gz ]
+    // - [ [ meta ], bakta.tsv.gz ]
     // - [ [ meta ], crisprhost.tsv.gz ]
+    // - [ [ meta ], defensefinder.tsv.gz ]
+    // - [ [ meta ], dgrscan.tsv.gz ]
+    // - [ [ meta ], empathi.csv.gz ]
+    // - [ [ meta ], foldseek.tsv.gz ]
+    // - [ [ meta ], interproscan.tsv.gz ]
+    // - [ [ meta ], padloc.csv.gz ]
+    // - [ [ meta ], pharokka.tsv.gz ]
+    // - [ [ meta ], phold.tsv.gz ]
     // - [ [ meta ], phisthost.tsv.gz ]
+    // - [ [ meta ], phynteny.tsv.gz ]
+    // - [ [ meta ], pseudofinder.gff.gz ]
     // - [ [ meta ], tophit.tsv.gz ]
     // - [ [ meta ], taxonomy.tsv.gz ]
-    // - [ [ meta ], bakta.gbk.gz ]
-    // - [ [ meta ], phrogs.tsv.gz ]
-    // - [ [ meta ], empathi.tsv.gz ]
-    // - [ [ meta ], lifestyle.tsv.gz ]
     // steps:
     // - CRISPRHOST (subworkflow)
     // - PHIST (subworkflow)
@@ -268,10 +292,44 @@ workflow {
     // - FUNCTION (subworkflow)
     // - LIFESTYLE (subworkflow)
     //--------------------------------------------
-    ANNOTATE(
-        ch_input_virus_fastas.mix(ch_virus_fna_gz).mix(ch_hq_virus_fna_gz),
-        ch_virus_summary_tsv_gz
-    )
+    // TODO: Test taxonomy
+    // TODO: Add vcontact3
+    if (params.run_crisprhost || params.run_phist || params.run_proteinsimilarity || params.run_function || params.run_lifestyle ) {
+        ANNOTATE(
+            ch_unique_virus_fna_gz,
+            ch_split_virus_fna_gz,
+            ch_virus_summary_tsv_gz
+        )
+    }
+
+    //-------------------------------------------
+    // WORKFLOW: COMPARE
+    // inputs:
+    // - [ [ meta ], virus.unique.fna.gz ]
+    // - params.uhvdb_dir
+    // outputs:
+    // - [ [ meta ], clusters.tsv.gz ]
+    // - [ [ meta ], dedup_reps.fna.gz ]
+    // - [ [ meta ], genomovar_reps.fna.gz ]
+    // - [ [ meta ], species_reps.fna.gz ]
+    // - [ [ meta ], species_reps.faa.gz ]
+    // - [ [ meta ], species_graph.txt.gz ]
+    // - [ [ meta ], family_graph.txt.gz ]
+    // - [ [ meta ], phylogeny.nwk.gz ]
+    // steps:
+    // - ANICLUSTER (subworkflow)
+    // - AAICLUSTER (subworkflow)
+    // - PHYLOGENY (module)
+    //--------------------------------------------
+    // TODO: Add anicluster subworkflow
+    // TODO: Add aaicluster subworkflow
+    if (params.run_anicluster || params.run_aaicluster || params.run_phylogeny ) {
+        COMPARE(
+            ch_unique_virus_fna_gz,
+            ch_split_virus_fna_gz,
+            ch_virus_summary_tsv_gz
+        )
+    }
 
     //-------------------------------------------
     // WORKFLOW: UPDATE
@@ -283,7 +341,7 @@ workflow {
     // - [ [ meta ], clusters.tsv.gz ]
     // - [ [ meta ], metadata.tsv.gz ]
     // - [ [ meta ], unique.fna.gz ]
-    // - [ [ meta ], dedup.fna.gz ]
+    // - [ [ meta ], dedup_reps.fna.gz ]
     // - [ [ meta ], genomovar_reps.fna.gz ]
     // - [ [ meta ], genomovar_reps.faa.gz ]
     // - [ [ meta ], species_reps.fna.gz ]
@@ -294,6 +352,7 @@ workflow {
     // - ANICLUSTER (subworkflow)
     // - AAICLUSTER (subworkflow)
     //--------------------------------------------
+    // TODO: Add update workflow
     // UPDATE(
     //     ch_hq_virus_fna_gz,
     //     ch_filter_summary_tsv_gz
@@ -316,6 +375,7 @@ workflow {
     // - REFERENCEANALYZE (subworkflow)
     // - ASSEMBLYANALYZE (subworkflow)
     //--------------------------------------------
+    // TODO: Add assemblyanalyze subworkflow
     // ANALYZE(
     //     ch_preprocessed_fastq_gz,
     //     ch_uhvdb_dir,
@@ -323,11 +383,18 @@ workflow {
     //     ch_virus_summary_tsv_gz
     // )
 
-    //-------------------------------------
-    // Compare novel viruses to UHVDB
-    //-------------------------------------
-    // // Identify viruses in the same family
-    // // Create MSA with TWILIGHT
-    // // Visualize phylogeny with DIPPER
-    // // Create panMAT with PanMan
+    //-------------------------------------------
+    // WORKFLOW: PANGENOME
+    // inputs:
+    // - [ [ meta ], virus.unique.fna.gz ]
+    // - params.uhvdb_taxid
+    // - params.uhvdb_dir
+    // outputs:
+    // - [ [ meta ], taxid.panmat ]
+    // steps:
+    // - PANMAT (subworkflow)
+    // - PPANGGOLIN (subworkflow)
+    //--------------------------------------------
+    // TODO: Add panmat
+    // TODO: Add ppanggolin
 }

@@ -1,46 +1,41 @@
 process DIAMOND_BLASTPSELF {
     tag "${meta.id}"
     label 'process_high'
-    container "https://community-cr-prod.seqera.io/docker/registry/v2/blobs/sha256/c8/c8f2bfa934e16ca7057b29dc5662b7610df006b952a16dea8cfa996d41205c98/data"
-    // Singularity: https://wave.seqera.io/view/builds/bd-2cf0e5b219980c3d_1?_gl=1*1gf7it2*_gcl_au*NjY1ODA2Mjk0LjE3NjM0ODUwMTIuOTE2NTY5NTQzLjE3NjY0MjU0MjkuMTc2NjQyNTQyOA..
+    container "https://community-cr-prod.seqera.io/docker/registry/v2/blobs/sha256/b0/b02ee5b879ab20cb43dc8a37f94cd193ff903431c91aa9fa512d697ad2ce60d0/data"
+    // Singularity: https://wave.seqera.io/view/builds/bd-218fef62763f7568_1?_gl=1*1rtwf0g*_gcl_au*NTUzODYxMTI2LjE3Njc2NTE5OTY.
 
     input:
-    tuple val(meta), path(faa)
+    tuple val(meta) , path(faa_gz)
 
     output:
     tuple val(meta), path("${meta.id}.diamond_blastp.tsv.gz")   , emit: tsv_gz
 
     script:
     """
-    # make DIAMOND db for self alignment
+    ### Make self DB
     diamond \\
         makedb \\
         --threads ${task.cpus} \\
-        --in ${faa} \\
+        --in ${faa_gz} \\
         -d ${meta.id}
 
-    # align genes to DIAMOND self db
+    ### Align genes to self
     diamond \\
         blastp \\
         --masking none \\
         -k 1000 \\
         -e 1e-3 \\
         --faster \\
-        --query ${faa} \\
+        --query ${faa_gz} \\
         --db ${meta.id}.dmnd \\
         --threads ${task.cpus} \\
         --outfmt 6 \\
         --out ${meta.id}.diamond_blastp.tsv
 
+    ### Compress
     gzip ${meta.id}.diamond_blastp.tsv
 
-    # clean tmp files
+    ### Cleanup
     rm -rf ${meta.id}.dmnd
-
-    cat <<-END_VERSIONS > versions.yml
-    "${task.process}":
-        diamond: \$(diamond --version 2>&1 | tail -n 1 | sed 's/^diamond version //')
-    END_VERSIONS
-
     """
 }

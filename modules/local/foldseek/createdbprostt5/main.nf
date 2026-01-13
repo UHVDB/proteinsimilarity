@@ -18,6 +18,7 @@ process FOLDSEEK_CREATEDBPROSTT5 {
         ${faa} \\
         ${meta.id}_3di_db \\
         --prostt5-model ${weights} \\
-        --threads ${task.cpus}
+        --threads ${task.cpus} \\
+        --gpu 1
     """
 }

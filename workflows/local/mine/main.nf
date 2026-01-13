@@ -15,6 +15,9 @@ workflow MINE {
 
     main:
 
+    ch_assembly_fna_gz = channel.empty()
+    ch_reads_spring    = channel.empty()
+
     //-------------------------------------------
     // SUBWORKFLOW: ASSEMBLE
     // inputs:

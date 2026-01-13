@@ -43,8 +43,13 @@ workflow PREPROCESS {
         input_sras,
         DEACON_INDEXFETCH.out.index.collect()
     )
-    ch_preprocessed_spring = ch_preprocessed_spring
-        .mix(READ_DOWNLOAD.out.spring)
+    ch_preprocessed_spring = READ_DOWNLOAD.out.spring
+        .combine(READ_DOWNLOAD.out.pe_count, by:0)
+        .map { meta, spring, pe_count ->
+            meta.single_end = (pe_count == 1)
+            return [ meta, spring ]
+        }
+        .mix(ch_preprocessed_spring)
 
     //-------------------------------------------
     // MODULE: READ_PREPROCESS

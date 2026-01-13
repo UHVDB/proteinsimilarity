@@ -1,40 +1,37 @@
 process GENETICCODE_SPLIT {
     tag "${meta.id}"
-    label 'process_low'
-    container "https://community-cr-prod.seqera.io/docker/registry/v2/blobs/sha256/cb/cbf0b946c283ddce3e949a7c6e5e80c2c965df35f8cae0ecf9078ed25dfcf110/data"
-    // Singularity: https://wave.seqera.io/view/builds/bd-0f2e218bda59ee6b_1?_gl=1*fcksx4*_gcl_au*NjY1ODA2Mjk0LjE3NjM0ODUwMTIuMTg0OTY4ODYzMC4xNzY1NDA0Njk5LjE3NjU0MDQ2OTk.
+    label 'process_high_mem'
+    container "https://community-cr-prod.seqera.io/docker/registry/v2/blobs/sha256/05/052a2a9822f7f61d1130ead55fc072b6502fbe287a929e3dcb7153fc9e7b69eb/data"
+    // Singularity: https://wave.seqera.io/view/builds/bd-416fa8571eb967e5_1?_gl=1*1rfsze2*_gcl_au*NTUzODYxMTI2LjE3Njc2NTE5OTY.
 
     input:
-    tuple val(meta), path(fna), path(tsv)
+    tuple val(meta) , path(fna_gz)
+    tuple val(meta2), path(tsv_gz)
 
     output:
-    tuple val(meta), path("${meta.id}_gcode*.fna.zst")  , emit: fna_zst
-    path("versions.yml")                                , emit: versions
+    tuple val(meta), path("${meta.id}_gcode*.fna.gz")   , emit: fna_gzs
 
     script:
     """
-    # split input fasta into smaller chunks
+    ### Split fasta by genetic code
     genetic_code_split.py \\
-        --input ${tsv} \\
-        --output ${meta.id} \\
-        --g_code_column genetic_code \\
-        --name_column seq_name
+        --input ${tsv_gz} \\
+        --output ${meta.id}
     
-    # split fna into separate files based on genetic code
     for file in ${meta.id}_gcode*.tsv; do
         code=\$(echo \${file} | sed -E 's/.*_gcode([0-9]+).tsv/\\1/')
 
         seqkit grep \\
-            ${fna} \\
+            ${fna_gz} \\
             --pattern-file \${file} \\
-            --out-file ${meta.id}_gcode\${code}.fna.zst
+            --out-file ${meta.id}_gcode\${code}.fna.gz
+
+        if [ \$(zgrep -c "^>" "${meta.id}_gcode\${code}.fna.gz") -eq 0 ]; then
+            rm -f ${meta.id}_gcode\${code}.fna.gz
+        fi
     done
 
-    cat <<-END_VERSIONS > versions.yml
-    "${task.process}":
-        python: \$( python --version | sed -e "s/Python //g" )
-        polars: \$(python -c "import polars; print(polars.__version__)")
-        seqkit: \$(echo \$(seqkit 2>&1) | sed 's/^.*Version: //; s/ .*\$//')
-    END_VERSIONS
+    ### Cleanup
+    rm -f ${meta.id}_gcode*.tsv
     """
 }

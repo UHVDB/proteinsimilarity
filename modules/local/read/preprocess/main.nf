@@ -18,7 +18,7 @@ process READ_PREPROCESS{
     def deacon_reads_out    = meta.single_end ? "--output ${meta.id}.deacon.fastq.gz" : "--output ${meta.id}_1.deacon.fastq.gz --output2 ${meta.id}_2.deacon.fastq.gz"
     def spring_input        = meta.single_end ? "${meta.id}.deacon.fastq.gz" : "${meta.id}_1.deacon.fastq.gz ${meta.id}_2.deacon.fastq.gz"
     """
-    # Run fastp on raw reads
+    ### Run fastp
     fastp \\
         ${fastp_reads_in} \\
         ${fastp_reads_out} \\
@@ -27,7 +27,7 @@ process READ_PREPROCESS{
         --thread ${task.cpus} \\
         --detect_adapter_for_pe
 
-    # Run deacon on fastp output
+    ### Run deacon
     deacon filter \\
         --deplete \\
         ${index} \\
@@ -37,7 +37,7 @@ process READ_PREPROCESS{
 
     rm -rf *.fastp.fastq.gz
 
-    # Run spring to compress fastq files
+    ### Run spring
     spring \\
         --compress \\
         --input ${spring_input} \\
@@ -47,6 +47,7 @@ process READ_PREPROCESS{
         --allow-read-reordering \\
         --output-file ${meta.id}.spring
 
-    rm -rf ${meta.id}.deacon*
+    ### Cleanup
+    rm -rf ${meta.id}*deacon*.fastq.gz *.fastp.html *.fastp.json
     """
 }

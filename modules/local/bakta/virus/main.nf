@@ -3,7 +3,6 @@ process BAKTA_VIRUS {
     label 'process_super_high'
     container "https://community-cr-prod.seqera.io/docker/registry/v2/blobs/sha256/2d/2dfb94caa02cda7e8fa885d1cd8190620d1a067c4a5045e84df6cfc2f89b7d12/data"
     // Singularity: https://wave.seqera.io/view/builds/bd-ab739ec5f76b6b51_1?_gl=1*2ib32a*_gcl_au*NjY1ODA2Mjk0LjE3NjM0ODUwMTIuMTg0OTY4ODYzMC4xNzY1NDA0Njk5LjE3NjU0MDQ2OTk.
-    publishDir "${params.output_dir}/annotate/bakta"  , mode: 'copy'  , pattern: "${meta.id}.gbff.gz"
 
     input:
     tuple val(meta) , path(fna)
@@ -22,16 +21,17 @@ process BAKTA_VIRUS {
 
     script:
     """
-    # run pyrodigal-gv to predict viral genes
+    ### Run pyrodigal-gv
     pyrodigal-gv \\
         -i ${fna} \\
         -c \\
         -g ${meta.g_code} \\
         -f gbk \\
-        -o ${meta.id}.pyrodigalgv.gbk
+        -o ${meta.id}.pyrodigalgv.gbk \\
+        --jobs ${task.cpus}
 
-    # run bakta (using modified version for viral gene predictions)
-    ${bakta_mod}/bin/bakta \\
+    ### Run bakta
+    bash ${bakta_mod}/bin/bakta \\
         ${fna} \\
         --regions ${meta.id}.pyrodigalgv.gbk \\
         --proteins ${uniref50_virus_db} \\
@@ -43,17 +43,16 @@ process BAKTA_VIRUS {
         --skip-plot \\
         --prefix ${meta.id}
 
-    # identify proteins without UniProt hit
+    ### Identify proteins without hits
     extract_nohit_proteins.py \\
         --input_tsv ${meta.id}.tsv \\
         --input_faa ${meta.id}.faa \\
         --name_column="Locus Tag" \\
         --output ${meta.id}.nohit.faa
 
-    # set source of gene predictions to pyrodigal-gv in output files
     sed -i "s/?\\t/pyrodigal-gv\\t/" ${meta.id}.gff3
 
-    # gzip output files
+    ### Compress
     gzip -f ${meta.id}.gbff
     gzip -f ${meta.id}.gff3
     gzip -f ${meta.id}.tsv
@@ -62,10 +61,9 @@ process BAKTA_VIRUS {
     gzip -f ${meta.id}.hypotheticals.faa
     gzip -f ${meta.id}.nohit.faa
 
-    # clean up intermediate files
-    rm ${meta.id}.pyrodigalgv.gbk
-
-    # clean up intermediate files
-    rm -rf ${meta.id}/
+    ### Cleanup
+    rm -rf ${meta.id}.pyrodigalgv.gbk ${meta.id}.embl ${meta.id}.fna \\
+        ${meta.id}.hypotheticals.tsv ${meta.id}.inference.tsv ${meta.id}.json \\
+        ${meta.id}.log ${meta.id}.txt 
     """
 }

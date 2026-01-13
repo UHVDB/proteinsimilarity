@@ -13,7 +13,7 @@ process EMPATHI_ONLYEMBEDDINGS {
 
     script:
     """
-    export HF_DATASETS_CACHE=${params.db_dir}/.huggingface-cache
+    export HF_HOME=${params.db_dir}/.huggingface-cache
 
     gunzip -f ${faa}
 

@@ -5,8 +5,8 @@ process SPACEREXTRACTOR_MAPTOTARGET {
     // Singularity: https://wave.seqera.io/view/builds/bd-f4b63d63859b49f0_1?_gl=1*1gn5au*_gcl_au*NjY1ODA2Mjk0LjE3NjM0ODUwMTIuOTE2NTY5NTQzLjE3NjY0MjU0MjkuMTc2NjQyNTQyOA..
 
     input:
-    tuple val(meta), path(fna_gz)
-    path(target_db)
+    tuple val(meta) , path(fna_gz)
+    tuple val(meta2), path(target_db)
 
     output:
     tuple val(meta), path("${meta.id}.spacerextractor_map.tsv.gz")  , emit: tsv_gz

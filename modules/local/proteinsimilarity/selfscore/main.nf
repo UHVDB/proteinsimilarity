@@ -12,17 +12,12 @@ process PROTEINSIMILARITY_SELFSCORE {
 
     script:
     """
-    # calculate self score
+    ### Calculate self scores
     self_score.py \\
         --input ${tsv_gz} \\
         --output ${meta.id}.selfscore.tsv
 
+    ### Compress
     gzip ${meta.id}.selfscore.tsv
-
-    cat <<-END_VERSIONS > versions.yml
-    "${task.process}":
-        python: \$( python --version | sed -e "s/Python //g" )
-        polars: \$(python -c "import polars; print(polars.__version__)")
-    END_VERSIONS
     """
 }

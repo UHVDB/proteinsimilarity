@@ -1,34 +1,37 @@
 process DIAMOND_BLASTP {
-    tag "${meta.id}_v_${meta2.id}"
+    tag "${meta.id}"
     label 'process_super_high'
-    container "https://community-cr-prod.seqera.io/docker/registry/v2/blobs/sha256/c8/c8f2bfa934e16ca7057b29dc5662b7610df006b952a16dea8cfa996d41205c98/data"
-    // Singularity: https://wave.seqera.io/view/builds/bd-2cf0e5b219980c3d_1?_gl=1*1gf7it2*_gcl_au*NjY1ODA2Mjk0LjE3NjM0ODUwMTIuOTE2NTY5NTQzLjE3NjY0MjU0MjkuMTc2NjQyNTQyOA..
+    container "https://community-cr-prod.seqera.io/docker/registry/v2/blobs/sha256/b0/b02ee5b879ab20cb43dc8a37f94cd193ff903431c91aa9fa512d697ad2ce60d0/data"
+    // Singularity: https://wave.seqera.io/view/builds/bd-218fef62763f7568_1?_gl=1*1rtwf0g*_gcl_au*NTUzODYxMTI2LjE3Njc2NTE5OTY.
 
     input:
-    tuple val(meta) , path(faa_gz)
-    tuple val(meta2), path(dmnd)
+    tuple val(meta) , path(fna_gz)  , path(dmnd)
 
     output:
     tuple val(meta), path("${meta.id}.diamond_blastp.tsv.gz")   , emit: tsv_gz
-    path("versions.yml")                                        , emit: versions
+    tuple val(meta), path("${meta.id}.pyrodigalgv.faa.gz")      , emit: faa_gz
 
     script:
     """
-    # align genes to DIAMOND reference db
+    ### Convert FNA to FAA
+    pyrodigal-gv \\
+        -i ${fna_gz} \\
+        -a ${meta.id}.pyrodigalgv.faa \\
+        --jobs ${task.cpus} \\
+        > /dev/null 2>&1
+
+    ### Align genes to reference
     diamond \\
         blastp \\
         ${params.diamond_args} \\
-        --query ${faa_gz} \\
+        --query ${meta.id}.pyrodigalgv.faa  \\
         --db ${dmnd} \\
         --threads ${task.cpus} \\
         --outfmt 6 \\
         --out ${meta.id}.diamond_blastp.tsv
 
+    ### Compress
     gzip ${meta.id}.diamond_blastp.tsv
-
-    cat <<-END_VERSIONS > versions.yml
-    "${task.process}":
-        diamond: \$(diamond --version 2>&1 | tail -n 1 | sed 's/^diamond version //')
-    END_VERSIONS
+    gzip ${meta.id}.pyrodigalgv.faa
     """
 }
