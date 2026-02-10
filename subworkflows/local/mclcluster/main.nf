@@ -10,8 +10,7 @@ include { MCL           } from '../../../modules/local/mcl'
 workflow MCLCLUSTER {
 
     take:
-    matrix_tsv_gz           // channel: [ [ meta ], matrix.tsv.gz ]
-    mcl_gz                  // channel: [ [ meta ], clusters.mcl.gz ]
+    matrix_clusters         // channel: [ [ meta ], matrix.tsv.gz, clusters.mcl.gz ]
     similarity_threshold    // val: float
     publish_dir             // val: string
 
@@ -30,8 +29,7 @@ workflow MCLCLUSTER {
     // - Compress (script)
     //--------------------------------------------
     UHVDB_PRUNE(
-        matrix_tsv_gz,
-        mcl_gz,
+        matrix_clusters,
         similarity_threshold
     )
 

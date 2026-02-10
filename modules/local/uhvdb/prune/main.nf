@@ -4,8 +4,7 @@ process UHVDB_PRUNE {
     container "https://community-cr-prod.seqera.io/docker/registry/v2/blobs/sha256/20/20246727909eb49ec44fa645f8185ad4b39f2a41a519da236304ea6d805d71d7/data"
 
     input:
-    tuple val(meta) , path(tsv_gz)
-    tuple val(meta2), path(mcl_gz)
+    tuple val(meta) , path(tsv_gz), path(mcl_gz)
     val(similarity_threshold)
 
     output:

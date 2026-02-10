@@ -59,7 +59,7 @@ workflow COMPARE {
                 def taxa = fna_gz.getBaseName().toString() =~ /taxa([^\.]+)\.fna/
                 [ [ id: fna_gz.getBaseName(), taxa: taxa[0][1] ], fna_gz ]
             },
-            10
+            2
     )
 
     //-------------------------------------------

@@ -3,6 +3,22 @@
     IMPORT PLUGINS/FUNCTIONS/MODULES/SUBWORKFLOWS/WORKFLOWS
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
+// FUNCTIONS
+def rmEmptyTsvs(ch_tsvs) {
+    def ch_nonempty_tsvs = ch_tsvs
+        .filter { _meta, tsv ->
+            try {
+                file(tsv).countLines( limit: 2 ) > 1
+            } catch (java.util.zip.ZipException e) {
+                log.debug "[rmEmptyTsvss]: ${tsv} is not in GZIP format, this is likely because it was cleaned with --remove_intermediate_files"
+                true
+            } catch (EOFException) {
+                log.debug "[rmEmptyTsvss]: ${tsv} has an EOFException, this is likely an empty gzipped file."
+            }
+        }
+    return ch_nonempty_tsvs
+}
+
 // MODULES
 include { CSVTK_FILTER2                 } from '../../../modules/local/csvtk/filter2'
 include { DIAMOND_BLASTP                } from '../../../modules/local/diamond/blastp'
@@ -153,9 +169,9 @@ workflow AAICLUSTER {
     // - UHVDB_PRUNE (module)
     // - MCL (script)
     //--------------------------------------------
+    ch_mcl_subfamily_input = rmEmptyTsvs(CSVTK_FILTER2.out.tsv_gz).combine(rmEmptyTsvs(MCL.out.mcl_gz), by:0)
     MCLCLUSTER_SUBFAMILY(
-        CSVTK_FILTER2.out.tsv_gz,
-        MCL.out.mcl_gz,
+        ch_mcl_subfamily_input,
         32.0,
         "${params.output_dir}/${params.new_release_id}/compare/aaicluster/subfamily_mcl/"
     )
@@ -172,9 +188,9 @@ workflow AAICLUSTER {
     // - UHVDB_PRUNE (module)
     // - MCL (script)
     //--------------------------------------------
+    ch_mcl_genus_input = rmEmptyTsvs(CSVTK_FILTER2.out.tsv_gz).combine(rmEmptyTsvs(MCLCLUSTER_SUBFAMILY.out.mcl_gz), by:0)
     MCLCLUSTER_GENUS(
-        CSVTK_FILTER2.out.tsv_gz,
-        MCLCLUSTER_SUBFAMILY.out.mcl_gz,
+        ch_mcl_genus_input,
         65.0,
         "${params.output_dir}/${params.new_release_id}/compare/aaicluster/genus_mcl/"
     )
@@ -191,9 +207,9 @@ workflow AAICLUSTER {
     // - UHVDB_PRUNE (module)
     // - MCL (script)
     //--------------------------------------------
+    ch_mcl_subgenus_input = rmEmptyTsvs(CSVTK_FILTER2.out.tsv_gz).combine(rmEmptyTsvs(MCLCLUSTER_GENUS.out.mcl_gz), by:0)
     MCLCLUSTER_SUBGENUS(
-        CSVTK_FILTER2.out.tsv_gz,
-        MCLCLUSTER_GENUS.out.mcl_gz,
+        ch_mcl_subgenus_input,
         80.0,
         "${params.output_dir}/${params.new_release_id}/compare/aaicluster/subgenus_mcl/"
     )
