@@ -14,7 +14,7 @@
 | URL | Release     | Sequence count | Description | Samplesheet |
 |-----|-------------|----------------|-------------|-------------|
 | | 2026-03-12 | | Adds viruses from human airway, urogenital, and skin metagenome assemblies. | |
-| | 2026-03-11 | | Adds viruses from 8 pre-existing human virus databases. | |
+| | 2026-03-11 | | Adds viruses from 9 pre-existing human virus databases. | |
 | | 2026-03-10 | | Initial release of UHVDB created from UHGV HQ+ confident & uncertain viruses. | |
 
 ## Pipeline Summary
